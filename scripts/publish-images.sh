@@ -4,13 +4,21 @@ set -euo pipefail
 REGISTRY="${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}"
 TAG="${DATAIF_IMAGE_TAG:-latest}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_FLAGS=(--pull)
+
+if [ -n "${DATAIF_BUILD_FLAGS:-}" ]; then
+  read -r -a EXTRA_BUILD_FLAGS <<<"${DATAIF_BUILD_FLAGS}"
+  BUILD_FLAGS+=("${EXTRA_BUILD_FLAGS[@]}")
+fi
 
 build_and_push() {
   local image_name="$1"
   local context_dir="$2"
   local dockerfile_path="$3"
 
-  docker build -t "${REGISTRY}/${image_name}:${TAG}" -f "${dockerfile_path}" "${context_dir}"
+  printf 'Building %s/%s:%s\n' "${REGISTRY}" "${image_name}" "${TAG}"
+  docker build "${BUILD_FLAGS[@]}" -t "${REGISTRY}/${image_name}:${TAG}" -f "${dockerfile_path}" "${context_dir}"
+  printf 'Pushing %s/%s:%s\n' "${REGISTRY}" "${image_name}" "${TAG}"
   docker push "${REGISTRY}/${image_name}:${TAG}"
 }
 

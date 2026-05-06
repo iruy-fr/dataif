@@ -63,7 +63,7 @@ Imagens esperadas no registry:
 - `dataif-ollama-bootstrap`
 
 Registry padrao da distribuicao remota:
-- `docker.io/iruyfr13`
+- `docker.io/dataif`
 
 ## Fluxo de dados da PNP
 1. O admin acessa a area administrativa via Keycloak.

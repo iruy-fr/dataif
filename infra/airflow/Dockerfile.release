@@ -12,6 +12,6 @@ RUN pip install --no-cache-dir -r /requirements.txt
 
 COPY --chown=airflow:root pipelines/airflow/dags /opt/airflow/dags
 COPY --chown=airflow:root pipelines/dataif_pipelines /opt/airflow/pipelines/dataif_pipelines
+COPY --chown=airflow:root pipelines/sql /opt/airflow/pipelines/sql
 
 ENV PYTHONPATH=/opt/airflow/pipelines
-

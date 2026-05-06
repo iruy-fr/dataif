@@ -1,6 +1,6 @@
 x-airflow-common:
   &airflow-common
-  image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-airflow:${DATAIF_IMAGE_TAG:-latest}
+  image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-airflow:${DATAIF_IMAGE_TAG:-latest}
   pull_policy: always
   env_file:
     - .env
@@ -27,7 +27,7 @@ x-airflow-common:
     NILO_PECANHA_ENDPOINT: ${NILO_PECANHA_ENDPOINT}
     NILO_TIMEOUT_SECONDS: ${NILO_TIMEOUT_SECONDS}
   volumes:
-    - ../pipelines/sql:/opt/airflow/pipelines/sql
+    - airflow_dags:/opt/airflow/dags/generated
     - airflow_logs:/opt/airflow/logs
   mem_limit: ${AIRFLOW_MEM_LIMIT:-1024m}
   depends_on:
@@ -36,7 +36,7 @@ x-airflow-common:
 
 services:
   postgres:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-postgres:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-postgres:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     env_file:
       - .env
@@ -129,7 +129,7 @@ services:
       retries: 12
 
   metabase-bootstrap:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-api:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-api:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     env_file:
       - .env
@@ -149,7 +149,7 @@ services:
     restart: "no"
 
   keycloak:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-keycloak:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-keycloak:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     env_file:
       - .env
@@ -162,7 +162,7 @@ services:
     mem_limit: ${KEYCLOAK_MEM_LIMIT:-1024m}
 
   vanna:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-vanna:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-vanna:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     env_file:
       - .env
@@ -201,7 +201,7 @@ services:
     mem_limit: ${OLLAMA_MEM_LIMIT:-8192m}
 
   ollama-model-bootstrap:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-ollama-bootstrap:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-ollama-bootstrap:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
@@ -218,7 +218,7 @@ services:
     restart: "no"
 
   api:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-api:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-api:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     env_file:
       - .env
@@ -260,7 +260,7 @@ services:
     ports:
       - "${API_PORT}:8000"
     volumes:
-      - ../pipelines/airflow/dags:/app/pipelines/airflow/dags
+      - airflow_dags:/app/pipelines/airflow/dags/generated
     mem_limit: ${API_MEM_LIMIT:-512m}
     depends_on:
       metabase-bootstrap:
@@ -269,7 +269,7 @@ services:
         condition: service_started
 
   web:
-    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/iruyfr13}/dataif-web:${DATAIF_IMAGE_TAG:-latest}
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-web:${DATAIF_IMAGE_TAG:-latest}
     pull_policy: always
     ports:
       - "${WEB_PORT}:80"
@@ -284,6 +284,7 @@ services:
 
 volumes:
   postgres_data:
+  airflow_dags:
   airflow_logs:
   metabase_data:
   vanna_data:
