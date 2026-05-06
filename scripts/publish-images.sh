@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REGISTRY="${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}"
+TAG="${DATAIF_IMAGE_TAG:-latest}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+build_and_push() {
+  local image_name="$1"
+  local context_dir="$2"
+  local dockerfile_path="$3"
+
+  docker build -t "${REGISTRY}/${image_name}:${TAG}" -f "${dockerfile_path}" "${context_dir}"
+  docker push "${REGISTRY}/${image_name}:${TAG}"
+}
+
+build_and_push "dataif-postgres" "${ROOT_DIR}" "${ROOT_DIR}/infra/postgres/Dockerfile"
+build_and_push "dataif-keycloak" "${ROOT_DIR}" "${ROOT_DIR}/infra/keycloak/Dockerfile"
+build_and_push "dataif-airflow" "${ROOT_DIR}" "${ROOT_DIR}/infra/airflow/Dockerfile.release"
+build_and_push "dataif-api" "${ROOT_DIR}/services/api" "${ROOT_DIR}/services/api/Dockerfile"
+build_and_push "dataif-web" "${ROOT_DIR}/services/web" "${ROOT_DIR}/services/web/Dockerfile"
+build_and_push "dataif-vanna" "${ROOT_DIR}/services/vanna" "${ROOT_DIR}/services/vanna/Dockerfile"
+build_and_push "dataif-ollama-bootstrap" "${ROOT_DIR}/infra/ollama" "${ROOT_DIR}/infra/ollama/Dockerfile"

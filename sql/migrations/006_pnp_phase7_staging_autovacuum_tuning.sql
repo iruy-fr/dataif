@@ -1,0 +1,2 @@
+-- Archived legacy migration.
+-- Autovacuum tuning for the removed intermediate base table is no longer used.

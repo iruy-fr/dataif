@@ -1,0 +1,3 @@
+-- Archived legacy migration.
+-- The final PNP contract materializes directly from raw domain tables into staging
+-- domain tables and does not retain the legacy raw compatibility backfill flow.

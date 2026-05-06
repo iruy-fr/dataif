@@ -1,0 +1,3 @@
+-- Archived legacy migration.
+-- Incremental upsert maintenance for the removed intermediate staging base table is
+-- no longer part of the final PNP contract.

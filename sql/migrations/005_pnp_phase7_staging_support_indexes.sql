@@ -1,0 +1,2 @@
+-- Archived legacy migration.
+-- Staging support indexes for the removed intermediate base table are no longer used.

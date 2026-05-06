@@ -1,0 +1,3 @@
+-- Archived legacy migration.
+-- Support indexes for the removed compatibility backfill are no longer part of the
+-- operational PNP schema.

@@ -1,0 +1,444 @@
+CREATE OR REPLACE VIEW curated.vw_pnp_admin_ingestao AS
+WITH package_counts AS (
+    SELECT run_id, COUNT(*) AS package_count
+    FROM raw.pnp_run_packages
+    GROUP BY run_id
+),
+quarantine_counts AS (
+    SELECT run_id, COUNT(*) AS quarantine_count
+    FROM raw.pnp_ingestion_quarantine
+    GROUP BY run_id
+)
+SELECT
+    runs.run_id,
+    runs.instance_key,
+    instances.connection_key,
+    instances.connection_name,
+    runs.airflow_dag_id,
+    runs.airflow_dag_run_id,
+    runs.trigger_mode,
+    runs.requested_by,
+    runs.logical_date,
+    runs.status,
+    runs.catalog_entry_count,
+    runs.selected_download_count,
+    runs.downloaded_file_count,
+    runs.raw_record_count,
+    COALESCE(staging.deduplicated_record_count, 0) AS staging_record_count,
+    COALESCE(package_counts.package_count, 0) AS package_count,
+    COALESCE(quarantine_counts.quarantine_count, 0) AS quarantine_count,
+    staging.quality_status,
+    runs.started_at,
+    runs.finished_at,
+    CASE
+        WHEN runs.finished_at IS NULL THEN NULL
+        ELSE EXTRACT(EPOCH FROM (runs.finished_at - runs.started_at))::BIGINT
+    END AS duration_seconds,
+    runs.error_message,
+    runs.run_summary_json
+FROM raw.pnp_runs runs
+LEFT JOIN raw.pnp_instances instances
+  ON instances.instance_key = runs.instance_key
+LEFT JOIN staging.pnp_ingestion_runs staging
+  ON staging.run_id = runs.run_id
+LEFT JOIN package_counts
+  ON package_counts.run_id = runs.run_id
+LEFT JOIN quarantine_counts
+  ON quarantine_counts.run_id = runs.run_id;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_qualidade_dados AS
+WITH quality_rows AS (
+    SELECT
+        run_id,
+        instance_key,
+        'Matrículas'::TEXT AS tipo_microdados,
+        instituicao,
+        uf,
+        sexo,
+        cor_raca,
+        renda_familiar,
+        faixa_etaria,
+        NULL::NUMERIC AS liquidacoes_totais,
+        NULL::NUMERIC AS numero_registros
+    FROM staging.pnp_matriculas
+    UNION ALL
+    SELECT
+        run_id,
+        instance_key,
+        'Eficiência Acadêmica'::TEXT AS tipo_microdados,
+        instituicao,
+        uf,
+        sexo,
+        cor_raca,
+        renda_familiar,
+        faixa_etaria,
+        NULL::NUMERIC AS liquidacoes_totais,
+        NULL::NUMERIC AS numero_registros
+    FROM staging.pnp_eficiencia_academica
+    UNION ALL
+    SELECT
+        run_id,
+        instance_key,
+        'Servidores'::TEXT AS tipo_microdados,
+        instituicao,
+        NULL::TEXT AS uf,
+        NULL::TEXT AS sexo,
+        NULL::TEXT AS cor_raca,
+        NULL::TEXT AS renda_familiar,
+        NULL::TEXT AS faixa_etaria,
+        NULL::NUMERIC AS liquidacoes_totais,
+        numero_registros
+    FROM staging.pnp_servidores
+    UNION ALL
+    SELECT
+        run_id,
+        instance_key,
+        'Financeiro'::TEXT AS tipo_microdados,
+        NULL::TEXT AS instituicao,
+        NULL::TEXT AS uf,
+        NULL::TEXT AS sexo,
+        NULL::TEXT AS cor_raca,
+        NULL::TEXT AS renda_familiar,
+        NULL::TEXT AS faixa_etaria,
+        liquidacoes_totais,
+        NULL::NUMERIC AS numero_registros
+    FROM staging.pnp_financeiro
+)
+SELECT
+    quality_rows.run_id,
+    quality_rows.instance_key,
+    quality_rows.tipo_microdados,
+    COUNT(*) AS registros,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados <> 'Financeiro'
+          AND quality_rows.instituicao IS NULL
+    ) AS registros_sem_instituicao,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados IN ('Matrículas', 'Eficiência Acadêmica')
+          AND quality_rows.uf IS NULL
+    ) AS registros_sem_uf,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados IN ('Matrículas', 'Eficiência Acadêmica')
+          AND quality_rows.sexo IS NULL
+    ) AS registros_sem_sexo,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados IN ('Matrículas', 'Eficiência Acadêmica')
+          AND quality_rows.cor_raca IS NULL
+    ) AS registros_sem_cor_raca,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados IN ('Matrículas', 'Eficiência Acadêmica')
+          AND quality_rows.renda_familiar IS NULL
+    ) AS registros_sem_renda_familiar,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados IN ('Matrículas', 'Eficiência Acadêmica')
+          AND quality_rows.faixa_etaria IS NULL
+    ) AS registros_sem_faixa_etaria,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados = 'Financeiro'
+          AND quality_rows.liquidacoes_totais IS NULL
+    ) AS registros_financeiros_sem_valor,
+    COUNT(*) FILTER (
+        WHERE quality_rows.tipo_microdados = 'Servidores'
+          AND quality_rows.numero_registros IS NULL
+    ) AS registros_servidores_sem_quantidade,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE quality_rows.tipo_microdados <> 'Financeiro'
+              AND quality_rows.instituicao IS NULL
+        ) / NULLIF(COUNT(*), 0),
+        2
+    ) AS pct_sem_instituicao,
+    ROUND(
+        100.0 * COUNT(*) FILTER (
+            WHERE quality_rows.tipo_microdados IN ('Matrículas', 'Eficiência Acadêmica')
+              AND quality_rows.uf IS NULL
+        ) / NULLIF(COUNT(*), 0),
+        2
+    ) AS pct_sem_uf
+FROM quality_rows
+GROUP BY quality_rows.run_id, quality_rows.instance_key, quality_rows.tipo_microdados;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_matriculas_perfil AS
+SELECT
+    run_id,
+    instance_key,
+    ano,
+    instituicao,
+    regiao,
+    uf,
+    municipio,
+    sexo,
+    cor_raca,
+    renda_familiar,
+    faixa_etaria,
+    situacao_matricula,
+    COUNT(*) AS matriculas,
+    SUM(vagas_ofertadas) AS vagas_ofertadas,
+    SUM(total_inscritos) AS inscritos
+FROM staging.pnp_matriculas
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_matriculas_oferta AS
+SELECT
+    run_id,
+    instance_key,
+    ano,
+    instituicao,
+    regiao,
+    uf,
+    municipio,
+    modalidade_ensino,
+    tipo_curso,
+    tipo_oferta,
+    turno,
+    eixo_tecnologico,
+    subeixo_tecnologico,
+    nome_curso,
+    COUNT(*) AS matriculas,
+    SUM(vagas_ofertadas) AS vagas_ofertadas,
+    SUM(total_inscritos) AS inscritos
+FROM staging.pnp_matriculas
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio, modalidade_ensino, tipo_curso, tipo_oferta, turno, eixo_tecnologico, subeixo_tecnologico, nome_curso;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_eficiencia_situacao AS
+SELECT
+    run_id,
+    instance_key,
+    ano,
+    instituicao,
+    regiao,
+    uf,
+    municipio,
+    sexo,
+    cor_raca,
+    renda_familiar,
+    faixa_etaria,
+    categoria_situacao,
+    situacao_matricula,
+    matricula_atendida,
+    COUNT(*) AS registros
+FROM staging.pnp_eficiencia_academica
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria, categoria_situacao, situacao_matricula, matricula_atendida;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_servidores_quadro AS
+SELECT
+    run_id,
+    instance_key,
+    ano,
+    instituicao,
+    regiao,
+    classe,
+    jornada_trabalho,
+    titulacao,
+    rsc,
+    vinculo_carreira,
+    vinculo_contrato,
+    vinculo_professor,
+    COUNT(*) AS servidores,
+    SUM(numero_registros) AS total_registros
+FROM staging.pnp_servidores
+GROUP BY run_id, instance_key, ano, instituicao, regiao, classe, jornada_trabalho, titulacao, rsc, vinculo_carreira, vinculo_contrato, vinculo_professor;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_financeiro_execucao AS
+SELECT
+    run_id,
+    instance_key,
+    ano,
+    nome_uo,
+    uo,
+    cod_acao,
+    nome_acao,
+    grupo_despesa,
+    COUNT(*) AS registros,
+    SUM(liquidacoes_totais) AS liquidacoes_totais
+FROM staging.pnp_financeiro
+GROUP BY run_id, instance_key, ano, nome_uo, uo, cod_acao, nome_acao, grupo_despesa;
+
+CREATE OR REPLACE VIEW curated.vw_pnp_vanna_catalogo AS
+SELECT 'vw_pnp_admin_ingestao' AS relation_name, 'administrativo' AS relation_group, 'Resumo operacional das execucoes da pipeline PNP.' AS relation_description
+UNION ALL
+SELECT 'vw_pnp_qualidade_dados', 'administrativo', 'Indicadores de completude e consistencia por tipo de microdado.'
+UNION ALL
+SELECT 'vw_pnp_matriculas_perfil', 'matriculas', 'Agregacoes de matriculas por perfil socioeconomico e situacao.'
+UNION ALL
+SELECT 'vw_pnp_matriculas_oferta', 'matriculas', 'Agregacoes de matriculas por curso, oferta e eixo tecnologico.'
+UNION ALL
+SELECT 'vw_pnp_eficiencia_situacao', 'eficiencia', 'Agregacoes de eficiencia academica por categoria e situacao.'
+UNION ALL
+SELECT 'vw_pnp_servidores_quadro', 'servidores', 'Agregacoes do quadro de servidores por carreira e titulacao.'
+UNION ALL
+SELECT 'vw_pnp_financeiro_execucao', 'financeiro', 'Agregacoes da execucao financeira por ano, UO e grupo de despesa.';
+
+CREATE OR REPLACE VIEW curated.vw_pnp_vanna_resumo AS
+SELECT run_id, instance_key, 'matriculas' AS dominio, 'matriculas' AS indicador, ano, instituicao, regiao, uf, municipio, SUM(matriculas)::NUMERIC AS valor
+FROM curated.vw_pnp_matriculas_perfil
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio
+UNION ALL
+SELECT run_id, instance_key, 'eficiencia' AS dominio, 'registros' AS indicador, ano, instituicao, regiao, uf, municipio, SUM(registros)::NUMERIC AS valor
+FROM curated.vw_pnp_eficiencia_situacao
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio
+UNION ALL
+SELECT run_id, instance_key, 'servidores' AS dominio, 'total_registros' AS indicador, ano, instituicao, regiao, NULL::TEXT AS uf, NULL::TEXT AS municipio, SUM(total_registros)::NUMERIC AS valor
+FROM curated.vw_pnp_servidores_quadro
+GROUP BY run_id, instance_key, ano, instituicao, regiao
+UNION ALL
+SELECT run_id, instance_key, 'financeiro' AS dominio, 'liquidacoes_totais' AS indicador, ano, nome_uo AS instituicao, NULL::TEXT AS regiao, NULL::TEXT AS uf, NULL::TEXT AS municipio, SUM(liquidacoes_totais)::NUMERIC AS valor
+FROM curated.vw_pnp_financeiro_execucao
+GROUP BY run_id, instance_key, ano, nome_uo;
+
+DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_matriculas CASCADE;
+CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_matriculas AS
+SELECT
+  run_id,
+  instance_key,
+  ano,
+  instituicao,
+  regiao,
+  uf,
+  municipio,
+  sexo,
+  cor_raca,
+  renda_familiar,
+  faixa_etaria,
+  situacao_matricula,
+  modalidade_ensino,
+  tipo_curso,
+  tipo_oferta,
+  turno,
+  nome_curso,
+  COUNT(*) AS matriculas,
+  SUM(vagas_ofertadas) AS vagas_ofertadas,
+  SUM(total_inscritos) AS inscritos
+FROM staging.pnp_matriculas
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula, modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso;
+
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_geo
+  ON curated.mv_pnp_dashboard_matriculas (run_id, ano, instituicao, regiao, uf, municipio);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_perfil
+  ON curated.mv_pnp_dashboard_matriculas (sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_oferta
+  ON curated.mv_pnp_dashboard_matriculas (modalidade_ensino, tipo_curso, tipo_oferta, turno);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_curso
+  ON curated.mv_pnp_dashboard_matriculas (nome_curso);
+
+DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_eficiencia CASCADE;
+CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_eficiencia AS
+SELECT
+  run_id,
+  instance_key,
+  ano,
+  instituicao,
+  regiao,
+  uf,
+  municipio,
+  sexo,
+  cor_raca,
+  renda_familiar,
+  faixa_etaria,
+  categoria_situacao,
+  situacao_matricula,
+  matricula_atendida,
+  SUM(registros) AS registros
+FROM curated.vw_pnp_eficiencia_situacao
+GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria, categoria_situacao, situacao_matricula, matricula_atendida;
+
+CREATE INDEX idx_mv_pnp_dashboard_eficiencia_geo
+  ON curated.mv_pnp_dashboard_eficiencia (run_id, ano, instituicao, regiao, uf, municipio);
+CREATE INDEX idx_mv_pnp_dashboard_eficiencia_perfil
+  ON curated.mv_pnp_dashboard_eficiencia (sexo, cor_raca, renda_familiar, faixa_etaria);
+CREATE INDEX idx_mv_pnp_dashboard_eficiencia_situacao
+  ON curated.mv_pnp_dashboard_eficiencia (categoria_situacao, situacao_matricula, matricula_atendida);
+
+DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_servidores CASCADE;
+CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_servidores AS
+SELECT
+  run_id,
+  instance_key,
+  ano,
+  instituicao,
+  regiao,
+  classe,
+  jornada_trabalho,
+  titulacao,
+  vinculo_carreira,
+  vinculo_contrato,
+  vinculo_professor,
+  SUM(servidores) AS servidores,
+  SUM(total_registros) AS total_registros
+FROM curated.vw_pnp_servidores_quadro
+GROUP BY run_id, instance_key, ano, instituicao, regiao, classe, jornada_trabalho, titulacao, vinculo_carreira, vinculo_contrato, vinculo_professor;
+
+CREATE INDEX idx_mv_pnp_dashboard_servidores_geo
+  ON curated.mv_pnp_dashboard_servidores (run_id, ano, instituicao, regiao);
+CREATE INDEX idx_mv_pnp_dashboard_servidores_dim
+  ON curated.mv_pnp_dashboard_servidores (classe, jornada_trabalho, titulacao, vinculo_carreira, vinculo_contrato, vinculo_professor);
+
+DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_financeiro CASCADE;
+CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_financeiro AS
+SELECT
+  run_id,
+  instance_key,
+  ano,
+  nome_uo,
+  uo,
+  cod_acao,
+  nome_acao,
+  grupo_despesa,
+  SUM(registros) AS registros,
+  SUM(liquidacoes_totais) AS liquidacoes_totais
+FROM curated.vw_pnp_financeiro_execucao
+GROUP BY run_id, instance_key, ano, nome_uo, uo, cod_acao, nome_acao, grupo_despesa;
+
+CREATE INDEX idx_mv_pnp_dashboard_financeiro_dim
+  ON curated.mv_pnp_dashboard_financeiro (run_id, ano, nome_uo, grupo_despesa, cod_acao, nome_acao);
+
+DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_qualidade CASCADE;
+CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_qualidade AS
+SELECT
+  run_id,
+  instance_key,
+  tipo_microdados,
+  registros,
+  registros_sem_instituicao,
+  registros_sem_uf,
+  registros_sem_sexo,
+  registros_sem_cor_raca,
+  registros_sem_renda_familiar,
+  registros_sem_faixa_etaria,
+  registros_financeiros_sem_valor,
+  registros_servidores_sem_quantidade,
+  pct_sem_instituicao,
+  pct_sem_uf
+FROM curated.vw_pnp_qualidade_dados;
+
+DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_ingestao CASCADE;
+CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_ingestao AS
+SELECT
+  run_id,
+  instance_key,
+  connection_key,
+  connection_name,
+  airflow_dag_id,
+  airflow_dag_run_id,
+  trigger_mode,
+  requested_by,
+  logical_date,
+  status,
+  catalog_entry_count,
+  selected_download_count,
+  downloaded_file_count,
+  raw_record_count,
+  staging_record_count,
+  package_count,
+  quarantine_count,
+  quality_status,
+  started_at,
+  finished_at,
+  duration_seconds,
+  error_message
+FROM curated.vw_pnp_admin_ingestao;
+
+CREATE INDEX idx_mv_pnp_dashboard_ingestao_run
+  ON curated.mv_pnp_dashboard_ingestao (run_id, status);
+
+GRANT SELECT ON ALL TABLES IN SCHEMA curated TO metabase_user, vanna_user;

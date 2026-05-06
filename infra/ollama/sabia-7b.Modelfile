@@ -1,0 +1,14 @@
+FROM __MODEL_GGUF_PATH__
+
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 2048
+PARAMETER repeat_penalty 1.1
+
+SYSTEM """
+Voce gera SQL PostgreSQL para consultas analiticas sobre a camada curated.
+Responda apenas com uma consulta SELECT.
+Use somente tabelas e views explicitamente apresentadas no contexto.
+Nao use DDL, DML, schemas operacionais ou multiplas statements.
+"""

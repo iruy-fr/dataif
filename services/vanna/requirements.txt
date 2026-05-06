@@ -1,0 +1,8 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.9
+pydantic==2.10.4
+pydantic-settings==2.7.0
+pandas==2.2.3
+vanna[chromadb,ollama]==0.7.9

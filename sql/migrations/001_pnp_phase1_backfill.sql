@@ -1,0 +1,3 @@
+-- Archived legacy migration.
+-- The final PNP contract no longer uses the legacy backfill path that depended on
+-- intermediate compatibility structures from the pre-raw/staging/curated model.

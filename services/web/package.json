@@ -1,0 +1,32 @@
+{
+  "name": "dataif-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.4.1",
+    "@electric-sql/pglite-react": "^0.3.2",
+    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/vite": "^4.2.2",
+    "@untitledui/icons": "^0.0.21",
+    "react": "^18.3.1",
+    "react-aria": "^3.47.0",
+    "react-aria-components": "^1.16.0",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2",
+    "tailwindcss-animate": "^1.0.7",
+    "tailwindcss-react-aria-components": "^2.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "postcss": "^8.5.8",
+    "vite": "^5.4.11"
+  }
+}
