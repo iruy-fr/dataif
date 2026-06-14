@@ -31,6 +31,7 @@ PNP_CONNECTION_ENTITY = "connection"
 PNP_PIPELINE_ENTITY = "pipeline"
 METABASE_DEFAULT_DASHBOARD_SETTING_KEY = "metabase.default_dashboard_id"
 VANNA_LLM_SETTING_KEY = "vanna.llm_config"
+VANNA_USER_LLM_SETTING_PREFIX = "vanna.llm_config.user."
 PNP_RUNTIME_TASK_META = {
     "load_instance_config": {
         "stage": "load_instance_config",
@@ -153,6 +154,10 @@ class AdminUserCreateRequest(BaseModel):
     first_name: str = Field(default="", max_length=120)
     last_name: str = Field(default="", max_length=120)
     enabled: bool = True
+
+
+class AdminUserMetabaseSyncRequest(BaseModel):
+    password: str = Field(..., min_length=8, max_length=255)
 
 
 class PnpInstanceCreateRequest(BaseModel):
@@ -519,6 +524,10 @@ def _vanna_llm_settings_from_env() -> dict[str, Any]:
 
 
 def _effective_vanna_llm_settings() -> dict[str, Any]:
+    return _effective_global_vanna_llm_settings()
+
+
+def _effective_global_vanna_llm_settings() -> dict[str, Any]:
     effective = _vanna_llm_settings_from_env()
     persisted = _read_app_setting(VANNA_LLM_SETTING_KEY)
     if not isinstance(persisted, dict):
@@ -546,9 +555,52 @@ def _effective_vanna_llm_settings() -> dict[str, Any]:
     }
 
 
+def _user_vanna_llm_setting_key(payload: dict[str, object] | None) -> str | None:
+    if not payload:
+        return None
+    subject = str(payload.get("sub") or "").strip()
+    if subject:
+        return f"{VANNA_USER_LLM_SETTING_PREFIX}{subject}"
+
+    fallback = str(payload.get("preferred_username") or payload.get("email") or "").strip().lower()
+    if not fallback:
+        return None
+    safe_fallback = re.sub(r"[^a-z0-9_.@-]+", "_", fallback)
+    return f"{VANNA_USER_LLM_SETTING_PREFIX}{safe_fallback}"
+
+
+def _read_user_vanna_llm_settings(payload: dict[str, object] | None) -> dict[str, Any] | None:
+    setting_key = _user_vanna_llm_setting_key(payload)
+    if not setting_key:
+        return None
+    value = _read_app_setting(setting_key)
+    return value if isinstance(value, dict) else None
+
+
+def _effective_vanna_llm_settings_for_user(payload: dict[str, object] | None) -> dict[str, Any]:
+    config = _effective_global_vanna_llm_settings()
+    scope = "global" if str(config["maritaca"].get("api_key") or "").strip() else "empty"
+    personal = _read_user_vanna_llm_settings(payload)
+    if isinstance(personal, dict):
+        maritaca = personal.get("maritaca") if isinstance(personal.get("maritaca"), dict) else {}
+        personal_key = str(maritaca.get("api_key") or "")
+        if personal_key.strip():
+            config = {
+                **config,
+                "maritaca": {
+                    **config["maritaca"],
+                    "api_key": personal_key,
+                },
+            }
+            scope = "personal"
+    config["_maritaca_api_key_scope"] = scope
+    return config
+
+
 def _serialize_vanna_llm_settings_public(config: dict[str, Any]) -> dict[str, Any]:
     maritaca = config["maritaca"]
     masked_key = _mask_secret(str(maritaca.get("api_key") or ""))
+    key_scope = str(config.get("_maritaca_api_key_scope") or ("configured" if masked_key else "empty"))
     return {
         "provider": config["provider"],
         "ollama": {
@@ -560,14 +612,19 @@ def _serialize_vanna_llm_settings_public(config: dict[str, Any]) -> dict[str, An
             "model": maritaca["model"],
             "timeout_seconds": maritaca["timeout_seconds"],
             "has_api_key": bool(str(maritaca.get("api_key") or "").strip()),
+            "api_key_scope": key_scope,
+            "has_personal_api_key": key_scope == "personal",
             "masked_api_key": masked_key,
         },
     }
 
 
-def _persist_vanna_llm_settings(payload: AdminLlmSettingsUpdateRequest) -> dict[str, Any]:
-    current = _effective_vanna_llm_settings()
-    next_value = {
+def _persist_vanna_llm_settings(
+    payload: AdminLlmSettingsUpdateRequest,
+    admin_payload: dict[str, object] | None = None,
+) -> dict[str, Any]:
+    current_global = _effective_global_vanna_llm_settings()
+    next_global = {
         "provider": payload.provider.strip().lower(),
         "ollama": {
             "base_url": payload.ollama.base_url.strip(),
@@ -577,16 +634,41 @@ def _persist_vanna_llm_settings(payload: AdminLlmSettingsUpdateRequest) -> dict[
             "api_url": payload.maritaca.api_url.strip(),
             "model": payload.maritaca.model.strip(),
             "timeout_seconds": int(payload.maritaca.timeout_seconds),
-            "api_key": current["maritaca"]["api_key"],
+            "api_key": current_global["maritaca"]["api_key"],
         },
     }
-    if payload.maritaca.clear_api_key:
-        next_value["maritaca"]["api_key"] = ""
-    elif payload.maritaca.api_key is not None:
-        next_value["maritaca"]["api_key"] = payload.maritaca.api_key.strip()
+    _write_app_setting(VANNA_LLM_SETTING_KEY, next_global)
 
-    _write_app_setting(VANNA_LLM_SETTING_KEY, next_value)
-    return next_value
+    user_setting_key = _user_vanna_llm_setting_key(admin_payload)
+    if user_setting_key:
+        if payload.maritaca.clear_api_key:
+            _write_app_setting(user_setting_key, {"maritaca": {"api_key": ""}})
+        elif payload.maritaca.api_key is not None:
+            _write_app_setting(user_setting_key, {"maritaca": {"api_key": payload.maritaca.api_key.strip()}})
+    elif payload.maritaca.clear_api_key:
+        next_global["maritaca"]["api_key"] = ""
+        _write_app_setting(VANNA_LLM_SETTING_KEY, next_global)
+    elif payload.maritaca.api_key is not None:
+        next_global["maritaca"]["api_key"] = payload.maritaca.api_key.strip()
+        _write_app_setting(VANNA_LLM_SETTING_KEY, next_global)
+
+    return _effective_vanna_llm_settings_for_user(admin_payload)
+
+
+def _vanna_llm_override_payload(config: dict[str, Any]) -> dict[str, object]:
+    return {
+        "provider": config["provider"],
+        "ollama": {
+            "base_url": config["ollama"]["base_url"],
+            "model": config["ollama"]["model"],
+        },
+        "maritaca": {
+            "api_url": config["maritaca"]["api_url"],
+            "api_key": config["maritaca"]["api_key"],
+            "model": config["maritaca"]["model"],
+            "timeout_seconds": config["maritaca"]["timeout_seconds"],
+        },
+    }
 
 
 def _vanna_provider_status(config: dict[str, Any]) -> dict[str, Any]:
@@ -1847,8 +1929,8 @@ def whoami(payload: dict[str, object] = Depends(_require_admin)) -> dict[str, ob
 
 
 @app.get("/api/admin/settings/llm")
-def get_admin_llm_settings(_: dict[str, object] = Depends(_require_admin)) -> dict[str, object]:
-    config = _effective_vanna_llm_settings()
+def get_admin_llm_settings(payload: dict[str, object] = Depends(_require_admin)) -> dict[str, object]:
+    config = _effective_vanna_llm_settings_for_user(payload)
     return {
         "config": _serialize_vanna_llm_settings_public(config),
         "status": _vanna_provider_status(config),
@@ -1856,16 +1938,16 @@ def get_admin_llm_settings(_: dict[str, object] = Depends(_require_admin)) -> di
 
 
 @app.get("/api/admin/settings/llm/status")
-def get_admin_llm_settings_status(_: dict[str, object] = Depends(_require_admin)) -> dict[str, object]:
-    return _vanna_provider_status(_effective_vanna_llm_settings())
+def get_admin_llm_settings_status(payload: dict[str, object] = Depends(_require_admin)) -> dict[str, object]:
+    return _vanna_provider_status(_effective_vanna_llm_settings_for_user(payload))
 
 
 @app.patch("/api/admin/settings/llm")
 def update_admin_llm_settings(
     payload: AdminLlmSettingsUpdateRequest,
-    _: dict[str, object] = Depends(_require_admin),
+    admin_payload: dict[str, object] = Depends(_require_admin),
 ) -> dict[str, object]:
-    config = _persist_vanna_llm_settings(payload)
+    config = _persist_vanna_llm_settings(payload, admin_payload)
     return {
         "config": _serialize_vanna_llm_settings_public(config),
         "status": _vanna_provider_status(config),
@@ -1921,6 +2003,49 @@ def create_admin_user(
             "metabase_synced": True,
             "metabase_user_id": metabase_user.get("id"),
         }
+    }
+
+
+@app.post("/api/admin/users/{user_id}/metabase-sync")
+def sync_admin_user_metabase(
+    user_id: str,
+    req: AdminUserMetabaseSyncRequest,
+    _: dict[str, object] = Depends(_require_admin),
+) -> dict[str, object]:
+    keycloak_client = _keycloak_admin_client()
+    metabase_client = _metabase_admin_client()
+    target = keycloak_client.get_admin_user(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Admin user not found in Keycloak")
+
+    email = str(target.get("email") or "").strip()
+    if not email:
+        raise HTTPException(status_code=409, detail="Admin user has no email for Metabase sync")
+
+    existing = metabase_client.find_user_by_email(email)
+    if existing:
+        return {
+            "user": {
+                **target,
+                "metabase_synced": True,
+                "metabase_user_id": existing.get("id"),
+            },
+            "created": False,
+        }
+
+    metabase_user = metabase_client.create_admin_user(
+        email=email,
+        password=req.password,
+        first_name=str(target.get("first_name") or ""),
+        last_name=str(target.get("last_name") or ""),
+    )
+    return {
+        "user": {
+            **target,
+            "metabase_synced": True,
+            "metabase_user_id": metabase_user.get("id"),
+        },
+        "created": True,
     }
 
 
@@ -2294,5 +2419,9 @@ def run_admin_sql_query(
 
 
 @app.post("/api/vanna/ask")
-async def ask(req: AskRequest) -> dict[str, object]:
-    return await ask_vanna(settings.vanna_service_url, req.question)
+async def ask(
+    req: AskRequest,
+    payload: dict[str, object] | None = Depends(verify_optional_bearer),
+) -> dict[str, object]:
+    config = _effective_vanna_llm_settings_for_user(payload) if payload else _effective_global_vanna_llm_settings()
+    return await ask_vanna(settings.vanna_service_url, req.question, _vanna_llm_override_payload(config))

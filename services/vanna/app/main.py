@@ -14,6 +14,7 @@ from .vanna_engine import DataifVannaEngine
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=1000)
+    llm_override: dict[str, Any] | None = None
 
 
 def _allowed_schema() -> str:
@@ -84,7 +85,7 @@ def train() -> dict[str, object]:
 def ask(req: AskRequest) -> dict[str, Any]:
     generation_mode = "vanna"
     try:
-        sql = _extract_sql(vanna_engine.generate_sql(req.question))
+        sql = _extract_sql(vanna_engine.generate_sql(req.question, runtime_override=req.llm_override))
     except Exception as exc:
         generation_mode = f"fallback: {exc}"
         sql = _fallback_sql(req.question)

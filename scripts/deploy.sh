@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+INFRA_DIR="${ROOT_DIR}/infra"
+ENV_FILE="${INFRA_DIR}/.env"
+STG_TEMPLATE="${INFRA_DIR}/.env.stg.example"
+PROD_TEMPLATE="${INFRA_DIR}/.env.example"
+COMPOSE_FILE="${INFRA_DIR}/docker-compose.yml"
+
+usage() {
+  cat <<'USAGE'
+Uso: ./scripts/deploy.sh stg|prod [--llm]
+
+stg   Sobe ambiente local de teste com variaveis presetadas.
+prod  Sobe ambiente local de producao com configuracao interativa.
+
+Opcoes:
+  --llm  Inclui Ollama e bootstrap do modelo local.
+
+Variaveis:
+  DATAIF_FORCE_ENV=true  Recria infra/.env a partir do template do modo.
+USAGE
+}
+
+mode="${1:-}"
+shift || true
+
+if [ "${mode}" != "stg" ] && [ "${mode}" != "prod" ]; then
+  usage >&2
+  exit 1
+fi
+
+compose_args=(--env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+
+for arg in "$@"; do
+  case "${arg}" in
+    --llm) compose_args+=(--profile llm) ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Opcao invalida: %s\n' "${arg}" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ "${mode}" = "stg" ]; then
+  if [ ! -f "${ENV_FILE}" ] || [ "${DATAIF_FORCE_ENV:-false}" = "true" ]; then
+    cp "${STG_TEMPLATE}" "${ENV_FILE}"
+    chmod 600 "${ENV_FILE}"
+    printf 'Arquivo stg criado: %s\n' "${ENV_FILE}"
+  else
+    printf 'Arquivo existente mantido: %s\n' "${ENV_FILE}"
+  fi
+else
+  if [ ! -f "${ENV_FILE}" ] || [ "${DATAIF_FORCE_ENV:-false}" = "true" ]; then
+    DATAIF_ENV_FILE="${ENV_FILE}" "${ROOT_DIR}/scripts/configure-env.sh"
+  else
+    printf 'Arquivo existente mantido: %s\n' "${ENV_FILE}"
+    printf 'Para reconfigurar: DATAIF_FORCE_ENV=true ./scripts/deploy.sh prod\n'
+  fi
+fi
+
+docker compose "${compose_args[@]}" config >/dev/null
+docker compose "${compose_args[@]}" up -d --build
+
+printf 'DataIF %s ativo.\n' "${mode}"
+printf 'Web: http://localhost:%s\n' "$(awk -F= '$1 == "WEB_PORT" {print $2}' "${ENV_FILE}")"

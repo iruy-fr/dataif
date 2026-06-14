@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any
@@ -111,24 +111,28 @@ class DataifVannaEngine:
             return self.vn
         if self._vanna_class is None or self._runtime_config is None:
             raise RuntimeError("Vanna runtime configuration is unavailable")
-        self.vn = self._vanna_class(config=self._provider_config())
+        self.vn = self._vanna_class(config=self._provider_config(self._runtime_config))
         self.vn.run_sql = self._run_sql_dataframe
         self.vn.run_sql_is_set = True
         return self.vn
 
-    def generate_sql(self, question: str) -> str:
-        runtime = self.runtime_config()
-        if not self.is_llm_available():
-            raise RuntimeError(self._unavailable_message())
+    def generate_sql(self, question: str, runtime_override: dict[str, Any] | None = None) -> str:
+        runtime = self._runtime_from_override(runtime_override)
+        if not self._is_runtime_available(runtime):
+            raise RuntimeError(self._unavailable_message(runtime))
         if runtime.auto_train:
             self.train_once()
-        return self._client().generate_sql(question=question, allow_llm_to_see_data=False)
+        client = self._client() if runtime.signature() == self.runtime_config().signature() else self._client_for_runtime(runtime)
+        return client.generate_sql(question=question, allow_llm_to_see_data=False)
 
     def is_llm_available(self) -> bool:
         return bool(self.provider_status()["available"])
 
     def provider_status(self) -> dict[str, object]:
         runtime = self.runtime_config()
+        return self._provider_status(runtime)
+
+    def _provider_status(self, runtime: RuntimeVannaConfig) -> dict[str, object]:
         provider = runtime.provider
         if provider == "maritaca":
             if runtime.maritaca_api_key.strip():
@@ -144,6 +148,9 @@ class DataifVannaEngine:
                 }
         except (OSError, TimeoutError, URLError) as exc:
             return {"available": False, "detail": f"Ollama is not reachable at {runtime.ollama_base_url}: {exc}"}
+
+    def _is_runtime_available(self, runtime: RuntimeVannaConfig) -> bool:
+        return bool(self._provider_status(runtime)["available"])
 
     def train_once(self, force: bool = False) -> None:
         with self._lock:
@@ -240,10 +247,10 @@ class DataifVannaEngine:
                 for row in rows
             ]
 
-    def _build_vanna_class(self) -> type:
+    def _build_vanna_class(self, provider: str | None = None) -> type:
         from vanna.chromadb import ChromaDB_VectorStore
 
-        provider = self.runtime_config().provider
+        provider = provider or self.runtime_config().provider
         if provider == "ollama":
             from vanna.ollama import Ollama
 
@@ -264,8 +271,8 @@ class DataifVannaEngine:
 
         raise RuntimeError(f"Unsupported VANNA_LLM_PROVIDER: {self.settings.vanna_llm_provider}")
 
-    def _provider_config(self) -> dict[str, Any]:
-        runtime = self.runtime_config()
+    def _provider_config(self, runtime: RuntimeVannaConfig | None = None) -> dict[str, Any]:
+        runtime = runtime or self.runtime_config()
         config: dict[str, Any] = {
             "model": runtime.model_name(),
             "path": runtime.vectorstore_path,
@@ -279,8 +286,37 @@ class DataifVannaEngine:
             config["maritaca_timeout_seconds"] = runtime.maritaca_timeout_seconds
         return config
 
-    def _unavailable_message(self) -> str:
+    def _client_for_runtime(self, runtime: RuntimeVannaConfig) -> Any:
+        client_class = self._build_vanna_class(runtime.provider)
+        client = client_class(config=self._provider_config(runtime))
+        client.run_sql = self._run_sql_dataframe
+        client.run_sql_is_set = True
+        return client
+
+    def _runtime_from_override(self, override: dict[str, Any] | None) -> RuntimeVannaConfig:
         runtime = self.runtime_config()
+        if not override:
+            return runtime
+
+        provider = str(override.get("provider") or runtime.provider).strip().lower() or runtime.provider
+        ollama = override.get("ollama") if isinstance(override.get("ollama"), dict) else {}
+        maritaca = override.get("maritaca") if isinstance(override.get("maritaca"), dict) else {}
+        return replace(
+            runtime,
+            provider=provider,
+            ollama_base_url=str(ollama.get("base_url") or runtime.ollama_base_url).strip() or runtime.ollama_base_url,
+            ollama_model=str(ollama.get("model") or runtime.ollama_model).strip() or runtime.ollama_model,
+            maritaca_api_url=str(maritaca.get("api_url") or runtime.maritaca_api_url).strip() or runtime.maritaca_api_url,
+            maritaca_api_key=str(maritaca.get("api_key") or runtime.maritaca_api_key),
+            maritaca_model=str(maritaca.get("model") or runtime.maritaca_model).strip() or runtime.maritaca_model,
+            maritaca_timeout_seconds=_coerce_positive_int(
+                maritaca.get("timeout_seconds"),
+                runtime.maritaca_timeout_seconds,
+            ),
+        )
+
+    def _unavailable_message(self, runtime: RuntimeVannaConfig | None = None) -> str:
+        runtime = runtime or self.runtime_config()
         provider = runtime.provider
         if provider == "maritaca":
             return "Maritaca API key is not configured"
@@ -301,7 +337,7 @@ class DataifVannaEngine:
         Path(runtime.vectorstore_path).mkdir(parents=True, exist_ok=True)
         self._runtime_config = runtime
         self._config_signature = signature
-        self._vanna_class = self._build_vanna_class()
+        self._vanna_class = self._build_vanna_class(runtime.provider)
         self.vn = None
         self._trained = False
 

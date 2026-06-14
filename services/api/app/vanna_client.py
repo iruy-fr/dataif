@@ -4,12 +4,20 @@ import httpx
 from fastapi import HTTPException
 
 
-async def ask_vanna(vanna_service_url: str, question: str) -> dict[str, object]:
+async def ask_vanna(
+    vanna_service_url: str,
+    question: str,
+    llm_override: dict[str, object] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {"question": question}
+    if llm_override:
+        payload["llm_override"] = llm_override
+
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
                 f"{vanna_service_url}/ask",
-                json={"question": question},
+                json=payload,
             )
     except httpx.RequestError as exc:
         raise HTTPException(status_code=503, detail=f"Vanna service unavailable: {exc}") from exc

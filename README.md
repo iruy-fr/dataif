@@ -28,42 +28,70 @@ Plataforma conteinerizada para ingestao de dados governamentais em PostgreSQL, c
 - `docs/`: arquitetura e material de apoio
 
 ## Subida rapida
-1. `cp infra/.env.example infra/.env`
-2. `cd infra && docker compose up -d --build`
+1. `./scripts/deploy.sh stg`
+2. Para producao local em nova maquina: `./scripts/deploy.sh prod`
 3. Acessos padrao:
-   - Web: `http://localhost:5173`
-   - API: `http://localhost:8000/docs`
-   - Airflow via web: `http://localhost:5173/airflow/`
-   - Metabase via web: `http://localhost:5173/metabase/`
-- Keycloak: `http://localhost:8081`
-- Vanna: `http://localhost:9000/health`
+   - Staging Web: `http://localhost:15173`
+   - Producao Web: porta definida no configurador
+   - API: `/api` via Web ou porta configurada
+   - Airflow via Web: `/airflow/`
+   - Metabase via Web: `/metabase/`
 
 Versao padrao do Metabase:
 - `METABASE_IMAGE_TAG=v0.60.1`
 
-## Deploy remoto
-Para distribuicao sem checkout do repositorio, publique as imagens do projeto no registry e use o compose remoto:
+## Guia de uso local
 
-1. Publique as imagens customizadas com `./scripts/publish-images.sh`
-2. O usuario final pode subir a stack com um comando:
-   - `curl -fsSL https://raw.githubusercontent.com/iruy-fr/dataif/main/scripts/deploy-remote.sh | bash`
+Pre-requisitos:
+- Docker Engine com Docker Compose v2
+- 6 GB de RAM livres para stack basica
+- 12 GB de RAM livres se usar Ollama local
 
-Esse fluxo baixa `infra/docker-compose.remote.yml`, gera `.dataif-deploy/.env` a partir do template e faz `docker compose pull && docker compose up -d`.
+Subir ambiente de teste/staging:
 
-No deploy remoto padrao, o compose sobe a stack inteira incluindo `ollama`, para que o admin possa alternar depois entre Ollama e Maritaca pela tela `Configuracoes Admin` sem depender de instalar novos containers manualmente.
-Na primeira instalacao, o bootstrap do Metabase cria automaticamente o admin tecnico configurado em `METABASE_ADMIN_EMAIL` e `METABASE_ADMIN_PASSWORD`. Esse usuario passa a ser a identidade usada pela API do DataIF para provisionar os demais admins no Metabase.
+```bash
+./scripts/deploy.sh stg
+```
 
-Imagens esperadas no registry:
-- `dataif-postgres`
-- `dataif-keycloak`
-- `dataif-airflow`
-- `dataif-api`
-- `dataif-web`
-- `dataif-vanna`
-- `dataif-ollama-bootstrap`
+Esse modo usa `infra/.env.stg.example`, cria `infra/.env` com valores presetados e sobe a mesma stack Docker do projeto. Use para desenvolvimento, testes e demonstracoes locais. Para recriar `infra/.env` de staging:
 
-Registry padrao da distribuicao remota:
-- `docker.io/dataif`
+```bash
+DATAIF_FORCE_ENV=true ./scripts/deploy.sh stg
+```
+
+Subir producao local em nova maquina:
+
+```bash
+./scripts/deploy.sh prod
+```
+
+Esse modo usa `infra/.env.example` apenas como template versionado, chama `scripts/configure-env.sh`, gera segredos e grava `infra/.env`. Nao edite `infra/.env.example` para uma instancia real. Configure senhas e `METABASE_EMBED_SECRET` antes do primeiro `up`, pois o Postgres inicializa usuarios somente na criacao do volume.
+
+Validar configuracao sem subir:
+
+```bash
+cd infra
+docker compose --env-file .env config >/dev/null
+```
+
+Ativar LLM local com Ollama:
+
+```bash
+./scripts/deploy.sh stg --llm
+# ou
+./scripts/deploy.sh prod --llm
+```
+
+Refazer do zero na maquina local:
+
+```bash
+cd infra
+docker compose --env-file .env down -v
+cd ..
+./scripts/deploy.sh stg
+```
+
+Depois da instalacao, o provider/modelo do Vanna pode ser ajustado pela tela `Configuracoes Admin`. Sem Ollama ativo e sem chave Maritaca, o servico Vanna permanece disponivel, mas respostas por LLM ficam indisponiveis ate configurar um provider.
 
 ## Fluxo de dados da PNP
 1. O admin acessa a area administrativa via Keycloak.

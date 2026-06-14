@@ -440,6 +440,8 @@ function normalizeAdminLlmForm(payload) {
       api_key: "",
       clear_api_key: false,
       has_api_key: Boolean(maritaca.has_api_key),
+      api_key_scope: maritaca.api_key_scope || "empty",
+      has_personal_api_key: Boolean(maritaca.has_personal_api_key),
       masked_api_key: maritaca.masked_api_key || "",
     },
   };
@@ -454,6 +456,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
   const [isSavingLlm, setIsSavingLlm] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState("");
+  const [syncingUserId, setSyncingUserId] = useState("");
   const [localNotice, setLocalNotice] = useState("");
   const [localError, setLocalError] = useState("");
 
@@ -561,6 +564,33 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
     }
   }
 
+  async function handleSyncMetabaseUser(userId, username) {
+    const password = window.prompt(`Senha inicial do Metabase para ${username}`);
+    if (!userId || !password) {
+      return;
+    }
+
+    setSyncingUserId(userId);
+    setLocalError("");
+    setLocalNotice("");
+    try {
+      const response = await adminRequest(`/api/admin/users/${userId}/metabase-sync`, {
+        method: "POST",
+        body: { password },
+      });
+      setUsers((current) =>
+        current
+          .map((item) => (item.id === userId ? response.user : item))
+          .sort((left, right) => left.username.localeCompare(right.username)),
+      );
+      setLocalNotice(`Usuario admin ${username} sincronizado no Metabase.`);
+    } catch (requestError) {
+      setLocalError(requestError instanceof Error ? requestError.message : "Falha ao sincronizar usuario no Metabase.");
+    } finally {
+      setSyncingUserId("");
+    }
+  }
+
   return (
     <section className="page">
       <PageHeader title="Configurações do Administrador">Persistencia de LLM e gestao de admins do Keycloak.</PageHeader>
@@ -574,7 +604,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
             { label: "Provider", value: llmForm.provider },
             { label: "Status", value: llmStatus?.available ? "disponivel" : "indisponivel" },
             { label: "Admins", value: String(users.length) },
-            { label: "Chave Maritaca", value: llmForm.maritaca.has_api_key ? "configurada" : "vazia" },
+            { label: "Chave Maritaca", value: llmForm.maritaca.api_key_scope === "personal" ? "propria" : llmForm.maritaca.has_api_key ? "global" : "vazia" },
           ]}
         />
       </Panel>
@@ -676,7 +706,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
                     />
                   </label>
                   <label className="field">
-                    <span>Nova chave da Maritaca</span>
+                    <span>Minha chave da Maritaca</span>
                     <input
                       type="password"
                       value={llmForm.maritaca.api_key}
@@ -707,7 +737,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
                     }))
                   }
                 />
-                <span>Limpar chave salva da Maritaca</span>
+                <span>Limpar minha chave salva da Maritaca</span>
               </label>
 
               <div className="actions-row">
@@ -828,6 +858,16 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
                     >
                       {deletingUserId === user.id ? "Excluindo..." : "Excluir"}
                     </button>
+                    {!user.metabase_synced ? (
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={syncingUserId === user.id}
+                        onClick={() => handleSyncMetabaseUser(user.id, user.username)}
+                      >
+                        {syncingUserId === user.id ? "Sincronizando..." : "Sincronizar"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -2412,9 +2452,14 @@ export default function App() {
     setVannaError("");
 
     try {
+      let headers = { "Content-Type": "application/json" };
+      if (auth.status === "authenticated") {
+        const token = await auth.getAccessToken();
+        headers = buildHeaders(token, true);
+      }
       const payload = await fetch(`${API_BASE_URL}/api/vanna/ask`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ question }),
       }).then(async (response) => {
         if (!response.ok) {
