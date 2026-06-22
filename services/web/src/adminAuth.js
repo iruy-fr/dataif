@@ -94,7 +94,7 @@ async function validateAdminSession(apiBaseUrl, accessToken) {
 
   if (!response.ok) {
     const detailText = await response.text();
-    throw new Error(`Falha ao validar a sessao admin: ${response.status} - ${detailText}`);
+    throw new Error(`Falha ao validar a sessão admin: ${response.status} - ${detailText}`);
   }
 
   const payload = await response.json();
@@ -163,8 +163,8 @@ export function useAdminAuth({ apiBaseUrl, storageKey }) {
 
     if (!currentSession.refreshToken || isExpired(currentSession.refreshExpiresAt, 0)) {
       clearStoredState(storageKeys);
-      setSession(buildSignedOutState("Sessao expirada. Entre novamente."));
-      throw new Error("Sessao admin expirada. Entre novamente.");
+      setSession(buildSignedOutState("Sessão expirada. Entre novamente."));
+      throw new Error("Sessão admin expirada. Entre novamente.");
     }
 
     const refreshed = await requestRefresh(apiBaseUrl, currentSession.refreshToken);
@@ -182,7 +182,7 @@ export function useAdminAuth({ apiBaseUrl, storageKey }) {
     } catch (error) {
       clearStoredState(storageKeys);
       setSession(
-        buildSignedOutState(error instanceof Error ? error.message : "Falha ao iniciar a sessao admin."),
+        buildSignedOutState(error instanceof Error ? error.message : "Falha ao iniciar a sessão admin."),
       );
       return false;
     }
@@ -208,7 +208,7 @@ export function useAdminAuth({ apiBaseUrl, storageKey }) {
 
         if (isExpired(storedSession.expiresAt)) {
           if (!storedSession.refreshToken || isExpired(storedSession.refreshExpiresAt, 0)) {
-            throw new Error("Sessao expirada. Entre novamente.");
+            throw new Error("Sessão expirada. Entre novamente.");
           }
 
           const refreshed = await requestRefresh(apiBaseUrl, storedSession.refreshToken);
@@ -222,7 +222,7 @@ export function useAdminAuth({ apiBaseUrl, storageKey }) {
         if (active) {
           setSession(
             buildSignedOutState(
-              error instanceof Error ? error.message : "Falha ao carregar a sessao admin.",
+              error instanceof Error ? error.message : "Falha ao carregar a sessão admin.",
             ),
           );
         }

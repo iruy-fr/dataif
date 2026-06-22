@@ -273,6 +273,7 @@ services:
       - ../services/api/app:/app/app
       - ../pipelines/airflow/dags:/app/pipelines/airflow/dags
     mem_limit: ${API_MEM_LIMIT:-512m}
+    restart: unless-stopped
     depends_on:
       metabase-bootstrap:
         condition: service_completed_successfully

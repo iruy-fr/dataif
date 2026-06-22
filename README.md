@@ -1,6 +1,6 @@
 # dataif
 
-Plataforma conteinerizada para ingestao de dados governamentais em PostgreSQL, com operacao administrativa via API e UI, ingestao no Airflow, dashboards no Metabase e consulta assistida via Vanna.
+Plataforma conteinerizada para ingestão de dados governamentais em PostgreSQL, com operacao administrativa via API e UI, ingestão no Airflow, dashboards no Metabase e consulta assistida via Vanna.
 
 ## Estado atual da PNP
 - O conector da Plataforma Nilo Pecanha opera somente em `powerbi_microdados`.
@@ -67,7 +67,7 @@ Subir producao local em nova maquina:
 
 Esse modo usa `infra/.env.example` apenas como template versionado, chama `scripts/configure-env.sh`, gera segredos e grava `infra/.env`. Nao edite `infra/.env.example` para uma instancia real. Configure senhas e `METABASE_EMBED_SECRET` antes do primeiro `up`, pois o Postgres inicializa usuarios somente na criacao do volume.
 
-Validar configuracao sem subir:
+Validar configuração sem subir:
 
 ```bash
 cd infra
@@ -91,13 +91,13 @@ cd ..
 ./scripts/deploy.sh stg
 ```
 
-Depois da instalacao, o provider/modelo do Vanna pode ser ajustado pela tela `Configuracoes Admin`. Sem Ollama ativo e sem chave Maritaca, o servico Vanna permanece disponivel, mas respostas por LLM ficam indisponiveis ate configurar um provider.
+Depois da instalacao, o provider/modelo do Vanna pode ser ajustado pela tela `Configurações Admin`. Sem Ollama ativo e sem chave Maritaca, o servico Vanna permanece disponivel, mas respostas por LLM ficam indisponiveis ate configurar um provider.
 
 ## Fluxo de dados da PNP
 1. O admin acessa a area administrativa via Keycloak.
 2. A UI consulta o catalogo publico da PNP no Power BI.
-3. O admin cria uma conexao selecionando anos, tipos e cron.
-4. O Airflow dispara a validacao ou a ingestao da instancia.
+3. O admin cria uma conexão selecionando anos, tipos e cron.
+4. O Airflow dispara a validação ou a ingestão da instancia.
 5. O conector baixa os arquivos publicos, grava manifestos em `raw.nilo_pecanha_assets` e linhas parseadas em `raw.nilo_pecanha_records`.
 6. O tratamento de `raw` para `staging` e a promocao final para `curated` sao feitos manualmente via SGBD.
 7. Metabase e Vanna consomem a camada `curated`.
@@ -115,12 +115,12 @@ O comando define `VANNA_LLM_PROVIDER=ollama`, preserva `VANNA_MARITACA_API_KEY`,
 
 Mantenha `VANNA_ALLOWED_SCHEMA=curated`; novas tabelas, views e materialized views em `curated` entram no treinamento quando o `vanna_user` tiver `SELECT`.
 
-A configuracao efetiva de provider/modelo tambem pode ser ajustada pela tela `Configuracoes Admin`. Os overrides ficam persistidos em banco e passam a valer sem editar `.env`; o `.env` continua como bootstrap inicial para credenciais, portas e valores default.
+A configuração efetiva de provider/modelo tambem pode ser ajustada pela tela `Configurações Admin`. Os overrides ficam persistidos em banco e passam a valer sem editar `.env`; o `.env` continua como bootstrap inicial para credenciais, portas e valores default.
 
 Tambem e possivel usar a API da Maritaca com `VANNA_LLM_PROVIDER=maritaca`, `VANNA_MARITACA_API_KEY` e `VANNA_MARITACA_MODEL=sabia-4`. O modelo Sabiá local via Ollama/GGUF continua opcional e nao e redistribuido nas imagens DockerHub do projeto.
 
 ## Admins e Metabase
-A tela `Configuracoes Admin` cria e remove usuarios administrativos em dois sistemas:
+A tela `Configurações Admin` cria e remove usuarios administrativos em dois sistemas:
 
 - Keycloak, como identidade de login do produto
 - Metabase, como administradores da instancia analitica
@@ -130,4 +130,4 @@ O vinculo entre eles usa o email do usuario. Se a criacao no Metabase falhar, a 
 ## Observacoes
 - O armazenamento operacional continua em `config.connector_endpoints`.
 - O frontend ja foi reorganizado em paginas de `Inicio`, `Pipelines`, `Conexoes`, `Dashboards` e `SQL`.
-- A documentacao em `docs/` descreve o fluxo oficial atual: `Power BI -> Airflow -> raw`, com `staging` e `curated` fora da orquestracao.
+- A documentacao em `docs/` descreve o fluxo oficial atual: `Power BI -> Airflow -> raw`, com `staging` e `curated` fora da orquestração.

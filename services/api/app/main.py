@@ -35,12 +35,12 @@ VANNA_USER_LLM_SETTING_PREFIX = "vanna.llm_config.user."
 PNP_RUNTIME_TASK_META = {
     "load_instance_config": {
         "stage": "load_instance_config",
-        "stage_label": "Carregamento da configuracao",
-        "message": "A configuracao da pipeline foi carregada.",
+        "stage_label": "Carregamento da configuração",
+        "message": "A configuração da pipeline foi carregada.",
     },
     "resolve_powerbi_catalog": {
         "stage": "resolve_powerbi_catalog",
-        "stage_label": "Resolucao do catalogo",
+        "stage_label": "Resolução do catálogo",
         "message": "O catalogo Power BI foi resolvido.",
     },
     "extract_raw": {
@@ -65,7 +65,7 @@ PNP_RUNTIME_TASK_META = {
     },
     "finalize_run": {
         "stage": "finalize_run",
-        "stage_label": "Encerramento da execucao",
+        "stage_label": "Encerramento da execução",
         "message": "A execucao da pipeline foi finalizada.",
     },
 }
@@ -293,6 +293,10 @@ def _validate_admin_sql(statement: str) -> str:
             raise HTTPException(status_code=422, detail="A consulta contem palavra-chave nao permitida.")
 
     return compact.rstrip(";")
+
+
+def _bounded_admin_sql(statement: str, max_rows: int) -> str:
+    return f"SELECT * FROM ({statement}) AS dataif_admin_sql_result LIMIT {max_rows + 1}"
 
 
 def _admin_sql_catalog() -> list[dict[str, object]]:
@@ -973,7 +977,7 @@ def _build_pnp_connection_payload(
 
     return {
         "endpoint_key": f"{connection_key}__connection",
-        "description": f"{connection_name} - conexao PNP",
+        "description": f"{connection_name} - conexão PNP",
         "page_url": page_url,
         "api_endpoint_url": None,
         "csv_url": None,
@@ -1075,7 +1079,7 @@ def _group_pnp_connections(
                 "page_url": row.get("page_url"),
                 "is_active": False,
                 "validation_status": "pending",
-                "validation_message": "Conexao sem validacao recente.",
+                "validation_message": "conexão sem validação recente.",
                 "pipeline_count": 0,
                 "pipelines": [],
                 "created_at": row.get("created_at"),
@@ -1262,7 +1266,7 @@ def _connection_health_snapshot() -> dict[str, str]:
         }
     return {
         "validation_status": "pending",
-        "validation_message": "A validacao online ainda nao foi executada nesta sessao da API.",
+        "validation_message": "A validação online ainda nao foi executada nesta sessão da API.",
         "page_url": DEFAULT_PNP_POWERBI_REPORT_URL,
     }
 
@@ -2394,12 +2398,13 @@ def run_admin_sql_query(
     _: dict[str, object] = Depends(_require_admin),
 ) -> dict[str, object]:
     statement = _validate_admin_sql(req.sql)
+    bounded_statement = _bounded_admin_sql(statement, req.max_rows)
 
     try:
         with _db_connect() as conn, conn.cursor() as cur:
             cur.execute("BEGIN READ ONLY")
             cur.execute("SET LOCAL statement_timeout = '15s'")
-            cur.execute(statement)
+            cur.execute(bounded_statement)
             fields = [{"name": item[0]} for item in (cur.description or [])]
             rows = list(cur.fetchmany(req.max_rows + 1)) if cur.description else []
             truncated = len(rows) > req.max_rows

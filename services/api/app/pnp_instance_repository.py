@@ -294,7 +294,7 @@ def _build_connection_row(row: dict[str, Any]) -> dict[str, Any]:
         "id": None,
         "connector_id": PNP_INTERNAL_CONNECTOR_ID,
         "endpoint_key": f"{row['connection_key']}__connection",
-        "description": f"{row['connection_name']} - conexao PNP",
+        "description": f"{row['connection_name']} - conexão PNP",
         "page_url": row.get("page_url"),
         "api_endpoint_url": None,
         "csv_url": None,

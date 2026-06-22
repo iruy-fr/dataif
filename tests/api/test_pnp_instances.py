@@ -278,7 +278,7 @@ def test_create_pnp_pipeline_uses_existing_connection(monkeypatch) -> None:
         "id": 1,
         "connector_id": main.PNP_INTERNAL_CONNECTOR_ID,
         "endpoint_key": "pnp_conn_principal__connection",
-        "description": "PNP Principal - conexao PNP",
+        "description": "PNP Principal - conexão PNP",
         "page_url": "https://app.powerbi.com/view?r=fake",
         "api_endpoint_url": None,
         "csv_url": None,

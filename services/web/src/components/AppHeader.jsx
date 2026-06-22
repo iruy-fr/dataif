@@ -94,7 +94,7 @@ function AccountMenu({ adminNavItems, auth, onAdminSettings, onLogout, onRequest
         <div className="account-dropdown">
           <div className="account-dropdown-head">
             <strong>{accountLabel}</strong>
-            <span>{auth.status === "authenticated" ? "Sessao ativa" : "Acesso visitante"}</span>
+            <span>{auth.status === "authenticated" ? "Sessão ativa" : "Acesso visitante"}</span>
           </div>
 
           {auth.status === "authenticated" ? (
@@ -105,7 +105,7 @@ function AccountMenu({ adminNavItems, auth, onAdminSettings, onLogout, onRequest
                   className="account-dropdown-item"
                   onClick={() => {
                     setIsOpen(false);
-                    onSelectRoute("/configuracoes");
+                    onSelectRoute("/configurações");
                   }}
                 >
                   Conta
@@ -131,7 +131,7 @@ function AccountMenu({ adminNavItems, auth, onAdminSettings, onLogout, onRequest
                     onAdminSettings();
                   }}
                 >
-                  Configuracoes Admin
+                  Configurações Admin
                 </button>
               </div>
 

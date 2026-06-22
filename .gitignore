@@ -13,3 +13,5 @@ coverage.xml
 htmlcov/
 .DS_Store
 *.swp
+docs/modular
+docs/plans

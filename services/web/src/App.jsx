@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminAuth } from "./adminAuth";
+import pnpLogoUrl from "./assets/pnp-horizontal.svg";
 import AppHeader from "./components/AppHeader";
 import { cx } from "./utils/cx";
 
@@ -26,8 +27,8 @@ const ADMIN_NAV_ITEMS = [
 ];
 
 const LOGIN_ROUTE = "/login";
-const SETTINGS_ROUTE = "/configuracoes";
-const ADMIN_SETTINGS_ROUTE = "/admin/configuracoes";
+const SETTINGS_ROUTE = "/configurações";
+const ADMIN_SETTINGS_ROUTE = "/admin/configurações";
 const CONNECTIONS_ROUTE = "/conexoes";
 const CONNECTION_CREATE_ROUTE = "/conexoes/nova";
 const CONNECTION_DETAIL_ROUTE = "/conexoes/detalhes";
@@ -186,6 +187,40 @@ function Panel({ title, action, className, children }) {
   );
 }
 
+function EntityModal({ title, actions, onClose, children }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button type="button" className="secondary" onClick={onClose}>
+            Fechar
+          </button>
+        </div>
+        {actions ? <div className="modal-actions">{actions}</div> : null}
+        <div className="modal-body">{children}</div>
+      </section>
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
   return <span className={`status-badge ${statusTone(status)}`}>{formatStatus(status)}</span>;
 }
@@ -195,6 +230,19 @@ function SummaryGrid({ items, className }) {
     <dl className={cx("summary-grid", className)}>
       {items.map((item) => (
         <div key={item.label} className="summary-item">
+          <dt>{item.label}</dt>
+          <dd>{item.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function DetailList({ items }) {
+  return (
+    <dl className="modal-detail-list">
+      {items.map((item) => (
+        <div key={item.label}>
           <dt>{item.label}</dt>
           <dd>{item.value}</dd>
         </div>
@@ -327,7 +375,7 @@ function LoginPage({ auth, onSubmit, onBack }) {
   if (auth.status === "authenticated") {
     return (
       <section className="page">
-        <PageHeader title="Sessao ativa">O acesso administrativo ja esta liberado.</PageHeader>
+        <PageHeader title="Sessão ativa">O acesso administrativo ja esta liberado.</PageHeader>
         <Panel>
           <div className="actions-row">
             <button type="button" onClick={onBack}>
@@ -387,7 +435,7 @@ function SettingsPage({ auth, onLoginRequest, onLogout }) {
     return (
       <AdminGate
         auth={auth}
-        message="As configuracoes exigem sessao autenticada."
+        message="As configurações exigem sessão autenticada."
         onLoginRequest={onLoginRequest}
       />
     );
@@ -414,7 +462,7 @@ function SettingsPage({ auth, onLoginRequest, onLogout }) {
         <SummaryGrid
           items={[
             { label: "Usuario", value: accountLabel },
-            { label: "Status", value: "Sessao ativa" },
+            { label: "Status", value: "Sessão ativa" },
             { label: "Escopo", value: "Workspace administrativo" },
           ]}
         />
@@ -472,7 +520,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
       setLlmStatus(llmResponse.status || null);
       setUsers(userResponse.items || []);
     } catch (requestError) {
-      setLocalError(requestError instanceof Error ? requestError.message : "Falha ao carregar as configuracoes administrativas.");
+      setLocalError(requestError instanceof Error ? requestError.message : "Falha ao carregar as configurações administrativas.");
     } finally {
       setIsLoading(false);
     }
@@ -489,7 +537,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
     return (
       <AdminGate
         auth={auth}
-        message="A configuracao administrativa exige sessao autenticada."
+        message="A configuração administrativa exige sessão autenticada."
         onLoginRequest={onLoginRequest}
       />
     );
@@ -517,9 +565,9 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
       });
       setLlmForm(normalizeAdminLlmForm(response));
       setLlmStatus(response.status || null);
-      setLocalNotice("Configuracao de LLM atualizada.");
+      setLocalNotice("Configuração de LLM atualizada.");
     } catch (requestError) {
-      setLocalError(requestError instanceof Error ? requestError.message : "Falha ao salvar a configuracao de LLM.");
+      setLocalError(requestError instanceof Error ? requestError.message : "Falha ao salvar a configuração de LLM.");
     } finally {
       setIsSavingLlm(false);
     }
@@ -612,7 +660,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
       <div className="card-grid two-col">
         <Panel title="Provider de LLM">
           {isLoading ? (
-            <p className="muted">Carregando configuracoes...</p>
+            <p className="muted">Carregando configurações...</p>
           ) : (
             <form className="stack" onSubmit={handleSaveLlmSettings}>
               <div className="form-grid two-col-form">
@@ -742,7 +790,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
 
               <div className="actions-row">
                 <button type="submit" disabled={isSavingLlm}>
-                  {isSavingLlm ? "Salvando..." : "Salvar configuracao"}
+                  {isSavingLlm ? "Salvando..." : "Salvar configuração"}
                 </button>
               </div>
             </form>
@@ -757,7 +805,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
                 { label: "Disponivel", value: llmStatus?.available ? "sim" : "nao" },
               ]}
             />
-            <p className="muted">{llmStatus?.detail || "Sem validacao recente."}</p>
+            <p className="muted">{llmStatus?.detail || "Sem validação recente."}</p>
           </div>
         </Panel>
       </div>
@@ -884,7 +932,7 @@ function AdminWorkspacePage({ auth, route, onLoginRequest, onLogout }) {
     return (
       <AdminGate
         auth={auth}
-        message="O workspace administrativo exige sessao admin."
+        message="O workspace administrativo exige sessão admin."
         onLoginRequest={onLoginRequest}
       />
     );
@@ -897,9 +945,9 @@ function AdminWorkspacePage({ auth, route, onLoginRequest, onLogout }) {
         <Panel>
           <SummaryGrid
             items={[
-              { label: "Uso", value: "Orquestracao" },
+              { label: "Uso", value: "Orquestração" },
               { label: "Acesso", value: "Externo" },
-              { label: "Sessao", value: "Admin" },
+              { label: "Sessão", value: "Admin" },
             ]}
           />
         </Panel>
@@ -916,7 +964,7 @@ function AdminWorkspacePage({ auth, route, onLoginRequest, onLogout }) {
             items={[
               { label: "Uso", value: "Dashboards" },
               { label: "Acesso", value: "Externo" },
-              { label: "Sessao", value: "Admin" },
+              { label: "Sessão", value: "Admin" },
             ]}
           />
         </Panel>
@@ -935,7 +983,7 @@ function AdminWorkspacePage({ auth, route, onLoginRequest, onLogout }) {
                 Abrir SQL
               </button>
               <button type="button" onClick={onLogout}>
-                Encerrar sessao
+                Encerrar sessão
               </button>
             </>
           }
@@ -943,9 +991,9 @@ function AdminWorkspacePage({ auth, route, onLoginRequest, onLogout }) {
         <Panel>
           <SummaryGrid
             items={[
-              { label: "Uso", value: "Consulta e manutencao" },
+              { label: "Uso", value: "Consulta e manutenção" },
               { label: "Acesso", value: "Interno" },
-              { label: "Sessao", value: "Admin" },
+              { label: "Sessão", value: "Admin" },
             ]}
           />
         </Panel>
@@ -965,7 +1013,7 @@ function AdminWorkspacePage({ auth, route, onLoginRequest, onLogout }) {
             </button>
           }
         >
-          <p className="muted">Orquestracao.</p>
+          <p className="muted">Orquestração.</p>
         </Panel>
 
         <Panel
@@ -1081,6 +1129,7 @@ function PipelinesPage({
   connections,
   selectedPipelineKey,
   onSelectPipeline,
+  onClosePipeline,
   overview,
   dagRuns,
   pipelineAction,
@@ -1097,7 +1146,7 @@ function PipelinesPage({
     return (
       <AdminGate
         auth={auth}
-        message="As pipelines exigem sessao admin."
+        message="As pipelines exigem sessão admin."
         onLoginRequest={onLoginRequest}
       />
     );
@@ -1158,7 +1207,7 @@ function PipelinesPage({
               </label>
 
               <label className="field">
-                <span>Conexao</span>
+                <span>conexão</span>
                 <select
                   value={pipelineForm.connection_key}
                   onChange={(event) => setPipelineForm({ ...pipelineForm, connection_key: event.target.value })}
@@ -1244,132 +1293,136 @@ function PipelinesPage({
         }
       />
 
-      <div className="layout-sidebar">
-        <Panel title="Pipelines">
-          <div className="selection-list">
-            {pipelines.map((instance) => {
-              const isSelected = selectedPipelineKey === instance.instance_key;
-              const status = isSelected ? selectedOverview?.ingestion?.status || "pending" : "pending";
+      <div className="entity-card-grid">
+        {pipelines.map((instance) => {
+          const isSelected = selectedPipelineKey === instance.instance_key;
+          const status = isSelected ? selectedOverview?.ingestion?.status || "pending" : instance.is_active ? "ready" : "pending";
 
-              return (
-                <button
-                  key={instance.instance_key}
-                  type="button"
-                  className={`selection-item${isSelected ? " selected" : ""}`}
-                  onClick={() => onSelectPipeline(instance.instance_key)}
-                >
-                  <div className="selection-item-head">
-                    <strong>{instance.instance_name}</strong>
-                    <StatusBadge status={status} />
-                  </div>
-                  <div className="selection-item-body">
-                    <span>{instance.connection_name || instance.connection_key}</span>
-                    <span>{serializeSelection(instance.selected_years) || "Sem anos"}</span>
-                    <span>{serializeSelection(instance.selected_microdados_types) || "Sem tipos"}</span>
-                    <span>{instance.schedule || "-"}</span>
-                  </div>
-                </button>
-              );
-            })}
-
-            {pipelines.length === 0 ? <p className="muted">Nenhuma pipeline cadastrada.</p> : null}
-          </div>
-        </Panel>
-
-        <div className="stack">
-          <Panel
-            title={selectedPipeline ? selectedPipeline.instance_name : "Operacao"}
-            action={
-              selectedPipeline ? (
-                <>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => onTriggerOperation("validate-sources")}
-                    disabled={pipelineAction === "validate-sources"}
-                  >
-                    {pipelineAction === "validate-sources" ? "Validando..." : "Validar"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onTriggerOperation("full-sync")}
-                    disabled={pipelineAction === "full-sync"}
-                  >
-                    {pipelineAction === "full-sync" ? "Executando..." : "Executar"}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => onDeletePipeline(selectedPipeline.instance_key)}
-                    disabled={deleteAction === selectedPipeline.instance_key}
-                  >
-                    {deleteAction === selectedPipeline.instance_key ? "Excluindo..." : "Excluir pipeline"}
-                  </button>
-                </>
-              ) : null
-            }
-          >
-            {selectedOverview && selectedPipeline ? (
-              <div className="stack">
-                <SummaryGrid
-                  items={[
-                    { label: "Conexao", value: selectedPipeline.connection_name || selectedPipeline.connection_key },
-                    { label: "Status", value: formatStatus(selectedOverview.ingestion.status) },
-                    { label: "Anos", value: serializeSelection(selectedPipeline.selected_years) || "-" },
-                    { label: "Tipos", value: serializeSelection(selectedPipeline.selected_microdados_types) || "-" },
-                    { label: "Cron", value: selectedPipeline.schedule || "-" },
-                  ]}
-                />
-
-                <div className="card-grid two-col">
-                  <div className="subsection">
-                    <h3>Diagnostico</h3>
-                    <div className="record-list">
-                      {(selectedOverview.diagnostics || []).map((item) => (
-                        <div key={item.endpoint_key} className="record-row">
-                          <div>
-                            <strong>{item.source_label || item.endpoint_key}</strong>
-                            <span>{item.operational_stage}</span>
-                          </div>
-                          <StatusBadge status={item.operational_status} />
-                        </div>
-                      ))}
-                      {(selectedOverview.diagnostics || []).length === 0 ? <p className="muted">Sem diagnostico.</p> : null}
-                    </div>
-                  </div>
-
-                  <div className="subsection">
-                    <h3>Timeline</h3>
-                    <div className="record-list">
-                      {(selectedOverview.run_events || []).map((event) => (
-                        <div key={`${event.stage}-${event.run_id}`} className="record-row">
-                          <div>
-                            <strong>{event.stage_label}</strong>
-                            <span>{formatTimestamp(event.timestamp)}</span>
-                          </div>
-                          <StatusBadge status={event.state} />
-                        </div>
-                      ))}
-                      {(selectedOverview.run_events || []).length === 0 ? <p className="muted">Sem eventos.</p> : null}
-                    </div>
-                  </div>
+          return (
+            <button
+              key={instance.instance_key}
+              type="button"
+              className="entity-card"
+              onClick={() => onSelectPipeline(instance.instance_key)}
+            >
+              <div className="entity-card-logo" aria-hidden="true">
+                <img src={pnpLogoUrl} alt="" />
+              </div>
+              <div className="entity-card-content">
+                <div className="entity-card-head">
+                  <h3>{instance.instance_name}</h3>
                 </div>
+                <dl className="entity-card-meta">
+                  <div>
+                    <dt>conexão</dt>
+                    <dd>{instance.connection_name || instance.connection_key}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>
+                      <StatusBadge status={status} />
+                    </dd>
+                  </div>
+                </dl>
               </div>
-            ) : (
-              <div className="empty-state">
-                <p>Selecione uma pipeline.</p>
-              </div>
-            )}
-          </Panel>
+            </button>
+          );
+        })}
 
-          <Panel title="DAG runs">
-            <RunsTable
-              runs={selectedPipeline ? dagRuns : []}
-              emptyMessage={selectedPipeline ? "Nenhuma execucao recente." : "Selecione uma pipeline."}
-            />
-          </Panel>
-        </div>
+        {pipelines.length === 0 ? <p className="muted">Nenhuma pipeline cadastrada.</p> : null}
       </div>
+
+      {selectedPipeline ? (
+        <EntityModal
+          title={selectedPipeline.instance_name}
+          onClose={onClosePipeline}
+          actions={
+            <>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => onTriggerOperation("validate-sources")}
+                disabled={pipelineAction === "validate-sources"}
+              >
+                {pipelineAction === "validate-sources" ? "Validando..." : "Validar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onTriggerOperation("full-sync")}
+                disabled={pipelineAction === "full-sync"}
+              >
+                {pipelineAction === "full-sync" ? "Executando..." : "Executar"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => onDeletePipeline(selectedPipeline.instance_key)}
+                disabled={deleteAction === selectedPipeline.instance_key}
+              >
+                {deleteAction === selectedPipeline.instance_key ? "Excluindo..." : "Excluir pipeline"}
+              </button>
+            </>
+          }
+        >
+          <div className="stack">
+            <section className="modal-content-section">
+              <h3>Resumo</h3>
+              <DetailList
+                items={[
+                  { label: "conexão", value: selectedPipeline.connection_name || selectedPipeline.connection_key },
+                  { label: "Status", value: <StatusBadge status={selectedOverview?.ingestion?.status || "pending"} /> },
+                  { label: "Anos", value: serializeSelection(selectedPipeline.selected_years) || "-" },
+                  { label: "Tipos", value: serializeSelection(selectedPipeline.selected_microdados_types) || "-" },
+                  { label: "Cron", value: selectedPipeline.schedule || "-" },
+                ]}
+              />
+            </section>
+
+            <div className="modal-split-grid">
+              <section className="modal-content-section">
+                <h3>Diagnostico</h3>
+                <div className="record-list">
+                  {(selectedOverview?.diagnostics || []).map((item) => (
+                    <div key={item.endpoint_key} className="record-row">
+                      <div>
+                        <strong>{item.source_label || item.endpoint_key}</strong>
+                        <span>{item.operational_stage}</span>
+                      </div>
+                      <StatusBadge status={item.operational_status} />
+                    </div>
+                  ))}
+                  {!selectedOverview ? <p className="muted">Carregando detalhes.</p> : null}
+                  {selectedOverview && (selectedOverview.diagnostics || []).length === 0 ? (
+                    <p className="muted">Sem diagnostico.</p>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="modal-content-section">
+                <h3>Timeline</h3>
+                <div className="record-list">
+                  {(selectedOverview?.run_events || []).map((event) => (
+                    <div key={`${event.stage}-${event.run_id}`} className="record-row">
+                      <div>
+                        <strong>{event.stage_label}</strong>
+                        <span>{formatTimestamp(event.timestamp)}</span>
+                      </div>
+                      <StatusBadge status={event.state} />
+                    </div>
+                  ))}
+                  {!selectedOverview ? <p className="muted">Carregando eventos.</p> : null}
+                  {selectedOverview && (selectedOverview.run_events || []).length === 0 ? <p className="muted">Sem eventos.</p> : null}
+                </div>
+              </section>
+            </div>
+
+            <section className="modal-content-section">
+              <h3>DAG runs</h3>
+              <RunsTable runs={dagRuns} emptyMessage="Nenhuma execucao recente." />
+            </section>
+          </div>
+        </EntityModal>
+      ) : null}
     </section>
   );
 }
@@ -1386,6 +1439,7 @@ function ConnectionsPage({
   selectedConnectionKey,
   detail,
   onOpenConnection,
+  onCloseConnection,
   onOpenPipeline,
   deleteAction,
   onDeleteConnection,
@@ -1394,7 +1448,7 @@ function ConnectionsPage({
     return (
       <AdminGate
         auth={auth}
-        message="A gestao de conexoes exige sessao admin."
+        message="A gestao de conexoes exige sessão admin."
         onLoginRequest={onLoginRequest}
       />
     );
@@ -1407,7 +1461,7 @@ function ConnectionsPage({
     return (
       <section className="page">
         <PageHeader
-          title="Nova conexao"
+          title="Nova conexão"
           actions={
             <button type="button" className="secondary" onClick={() => navigate(CONNECTIONS_ROUTE)}>
               Voltar
@@ -1416,7 +1470,7 @@ function ConnectionsPage({
         />
 
         <form className="stack" onSubmit={onSubmitConnection}>
-          <Panel title="Conexao">
+          <Panel title="conexão">
             <label className="field">
               <span>Nome</span>
               <input
@@ -1440,7 +1494,7 @@ function ConnectionsPage({
 
           <div className="actions-row">
             <button type="submit" disabled={createState === "loading"}>
-              {createState === "loading" ? "Criando..." : "Criar conexao"}
+              {createState === "loading" ? "Criando..." : "Criar conexão"}
             </button>
           </div>
         </form>
@@ -1448,64 +1502,107 @@ function ConnectionsPage({
     );
   }
 
-  if (route === CONNECTION_DETAIL_ROUTE) {
-    return (
-      <section className="page">
-        <PageHeader
-          title={selectedConnection?.connection_name || "Conexao"}
+  return (
+    <section className="page">
+      <PageHeader
+        title="Conexões"
+        actions={
+          <button type="button" onClick={() => navigate(CONNECTION_CREATE_ROUTE)}>
+            Nova conexão
+          </button>
+        }
+      />
+
+      <div className="entity-card-grid">
+        {connections.map((instance) => (
+          <button
+            key={instance.connection_key}
+            type="button"
+            className="entity-card"
+            onClick={() => onOpenConnection(instance.connection_key)}
+          >
+            <div className="entity-card-logo" aria-hidden="true">
+              <img src={pnpLogoUrl} alt="" />
+            </div>
+            <div className="entity-card-content">
+              <div className="entity-card-head">
+                <h3>{instance.connection_name}</h3>
+              </div>
+              <dl className="entity-card-meta">
+                <div>
+                  <dt>Chave</dt>
+                  <dd>{instance.connection_key}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <StatusBadge status={instance.validation_status || (instance.is_active ? "ready" : "pending")} />
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </button>
+        ))}
+
+        {connections.length === 0 ? <p className="muted">Nenhuma conexão cadastrada.</p> : null}
+      </div>
+
+      {selectedConnection ? (
+        <EntityModal
+          title={selectedConnection.connection_name}
+          onClose={onCloseConnection}
           actions={
             <>
-              <button type="button" className="secondary" onClick={() => navigate(CONNECTIONS_ROUTE)}>
-                Voltar
-              </button>
-              {selectedConnection ? (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => onDeleteConnection(selectedConnection.connection_key)}
-                  disabled={deleteAction === selectedConnection.connection_key}
-                >
-                  {deleteAction === selectedConnection.connection_key ? "Excluindo..." : "Excluir conexao"}
-                </button>
-              ) : null}
               <button
                 type="button"
                 onClick={() => {
-                  window.sessionStorage.setItem("dataif.connection.selected", selectedConnection?.connection_key || "");
+                  window.sessionStorage.setItem("dataif.connection.selected", selectedConnection.connection_key);
                   navigate(PIPELINE_CREATE_ROUTE);
                 }}
               >
                 Nova pipeline
               </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => onDeleteConnection(selectedConnection.connection_key)}
+                disabled={deleteAction === selectedConnection.connection_key}
+              >
+                {deleteAction === selectedConnection.connection_key ? "Excluindo..." : "Excluir conexão"}
+              </button>
             </>
           }
-        />
-
-        {selectedConnection ? (
+        >
           <div className="stack">
-            <Panel title="Resumo">
-              <SummaryGrid
+            <section className="modal-content-section">
+              <h3>Resumo</h3>
+              <DetailList
                 items={[
                   { label: "Chave", value: selectedConnection.connection_key },
                   { label: "Status", value: selectedConnection.is_active ? "Ativa" : "Inativa" },
-                  { label: "Validacao", value: formatStatus(selectedConnection.validation_status) },
+                  {
+                    label: "Validação",
+                    value: <StatusBadge status={selectedConnection.validation_status || (selectedConnection.is_active ? "ready" : "pending")} />,
+                  },
                   { label: "Pipelines", value: selectedConnection.pipeline_count || linkedPipelines.length },
                   { label: "Atualizado", value: formatTimestamp(selectedConnection.updated_at) },
                 ]}
               />
-            </Panel>
+            </section>
 
-            <Panel title="Validacao">
+            <section className="modal-content-section">
+              <h3>Validação</h3>
               <div className="record-row">
                 <div>
-                  <strong>{selectedConnection.validation_message}</strong>
+                  <strong>{selectedConnection.validation_message || "Sem mensagem de validação."}</strong>
                   <span>{selectedConnection.page_url || "-"}</span>
                 </div>
-                <StatusBadge status={selectedConnection.validation_status} />
+                <StatusBadge status={selectedConnection.validation_status || (selectedConnection.is_active ? "ready" : "pending")} />
               </div>
-            </Panel>
+            </section>
 
-            <Panel title="Pipelines vinculadas">
+            <section className="modal-content-section">
+              <h3>Pipelines vinculadas</h3>
               <div className="record-list">
                 {linkedPipelines.map((pipeline) => (
                   <button
@@ -1527,54 +1624,10 @@ function ConnectionsPage({
                 ))}
                 {linkedPipelines.length === 0 ? <p className="muted">Nenhuma pipeline vinculada.</p> : null}
               </div>
-            </Panel>
+            </section>
           </div>
-        ) : (
-          <Panel>
-            <div className="empty-state">
-              <p>Selecione uma conexao.</p>
-            </div>
-          </Panel>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <section className="page">
-      <PageHeader
-        title="Conexões"
-        actions={
-          <button type="button" onClick={() => navigate(CONNECTION_CREATE_ROUTE)}>
-            Nova conexao
-          </button>
-        }
-      />
-
-      <Panel>
-        <div className="record-list">
-          {connections.map((instance) => (
-            <button
-              key={instance.connection_key}
-              type="button"
-              className="selection-item"
-              onClick={() => onOpenConnection(instance.connection_key)}
-            >
-              <div className="selection-item-head">
-                <strong>{instance.connection_name}</strong>
-                <StatusBadge status={instance.validation_status || (instance.is_active ? "ready" : "pending")} />
-              </div>
-              <div className="selection-item-body">
-                <span>{instance.connection_key}</span>
-                <span>{instance.pipeline_count || 0} pipeline(s)</span>
-                <span>{formatTimestamp(instance.updated_at)}</span>
-              </div>
-            </button>
-          ))}
-
-          {connections.length === 0 ? <p className="muted">Nenhuma conexao cadastrada.</p> : null}
-        </div>
-      </Panel>
+        </EntityModal>
+      ) : null}
     </section>
   );
 }
@@ -1613,14 +1666,27 @@ const DEFAULT_POSTGRES_SQL = "SELECT now();";
 const SYSTEM_SCHEMAS = new Set(["pg_catalog", "information_schema"]);
 const RELATION_CONTEXT_KEYWORDS = new Set(["from", "join", "update", "into", "table", "view"]);
 const COLUMN_CONTEXT_KEYWORDS = new Set(["select", "where", "and", "or", "on", "order", "group", "by", "having", "set"]);
-const SQL_SUGGESTION_MAX_WIDTH = 520;
-const SQL_SUGGESTION_MIN_WIDTH = 280;
-const SQL_SUGGESTION_MAX_HEIGHT = 260;
+const SQL_FUNCTION_SUGGESTIONS = [
+  { label: "now", detail: "function", insertText: "now()" },
+  { label: "count", detail: "aggregate", insertText: "count(*)" },
+  { label: "sum", detail: "aggregate", insertText: "sum()" },
+  { label: "avg", detail: "aggregate", insertText: "avg()" },
+  { label: "min", detail: "aggregate", insertText: "min()" },
+  { label: "max", detail: "aggregate", insertText: "max()" },
+  { label: "date_trunc", detail: "function", insertText: "date_trunc()" },
+  { label: "coalesce", detail: "function", insertText: "coalesce()" },
+  { label: "nullif", detail: "function", insertText: "nullif()" },
+  { label: "round", detail: "function", insertText: "round()" },
+];
+const SQL_SUGGESTION_MAX_WIDTH = 420;
+const SQL_SUGGESTION_MIN_WIDTH = 220;
+const SQL_SUGGESTION_MAX_HEIGHT = 180;
+const SQL_SUGGESTION_ROW_HEIGHT = 31;
 const SQL_SUGGESTION_GAP = 8;
 
 function getTokenRange(sql, cursorPosition) {
   const safeCursor = Math.max(0, Math.min(cursorPosition, sql.length));
-  const isTokenCharacter = (character) => /[A-Za-z0-9_$]/.test(character);
+  const isTokenCharacter = (character) => /[A-Za-z0-9_$.]/.test(character);
 
   let start = safeCursor;
   while (start > 0 && isTokenCharacter(sql[start - 1])) {
@@ -1645,8 +1711,11 @@ function getSqlEditorContext(sql, cursorPosition) {
   const words = beforeCursor.toLowerCase().match(/[a-z_]+/g) || [];
   const previousWord = tokenRange.start === cursorPosition ? words.at(-1) || "" : words.at(-2) || "";
   const currentWord = tokenRange.token.toLowerCase();
+  const qualifiedMatch = currentWord.match(/^([a-z_][a-z0-9_$]*)\.(.*)$/);
 
   return {
+    qualifier: qualifiedMatch?.[1] || "",
+    qualifiedToken: qualifiedMatch?.[2] || "",
     previousWord,
     currentWord,
     tokenRange,
@@ -1716,7 +1785,7 @@ function getTextareaCaretPoint(textarea, position) {
   return point;
 }
 
-function getSqlSuggestionPosition(textarea, shell) {
+function getSqlSuggestionPosition(textarea, shell, suggestionCount = 0) {
   if (!textarea || !shell) {
     return null;
   }
@@ -1734,12 +1803,15 @@ function getSqlSuggestionPosition(textarea, shell) {
   const caretTop = textareaTop + caret.top;
   const caretBottom = caretTop + caret.lineHeight;
   const editorBottom = textareaTop + textareaHeight;
+  const listHeight = suggestionCount
+    ? Math.min(SQL_SUGGESTION_MAX_HEIGHT, Math.max(SQL_SUGGESTION_ROW_HEIGHT, suggestionCount * SQL_SUGGESTION_ROW_HEIGHT + 2))
+    : SQL_SUGGESTION_MAX_HEIGHT;
   const spaceBelow = Math.max(0, editorBottom - caretBottom - SQL_SUGGESTION_GAP);
   const spaceAbove = Math.max(0, caretTop - textareaTop - SQL_SUGGESTION_GAP);
-  const shouldOpenBelow = spaceBelow >= 96 || spaceBelow >= spaceAbove;
+  const shouldOpenBelow = spaceBelow >= Math.min(96, listHeight) || spaceBelow >= spaceAbove;
   const maxHeight = shouldOpenBelow
-    ? Math.min(SQL_SUGGESTION_MAX_HEIGHT, Math.max(96, spaceBelow))
-    : Math.min(SQL_SUGGESTION_MAX_HEIGHT, spaceAbove);
+    ? Math.min(listHeight, Math.max(SQL_SUGGESTION_ROW_HEIGHT, spaceBelow))
+    : Math.min(listHeight, spaceAbove);
   const top = shouldOpenBelow
     ? caretBottom + SQL_SUGGESTION_GAP
     : Math.max(SQL_SUGGESTION_GAP, caretTop - maxHeight - SQL_SUGGESTION_GAP);
@@ -1755,12 +1827,14 @@ function getSqlSuggestionPosition(textarea, shell) {
 function useSqlCatalog(catalogRows) {
   return useMemo(() => {
     const relationMap = new Map();
+    const schemaSet = new Set();
 
     for (const row of catalogRows || []) {
       if (!row?.schema_name || !row?.relation_name || SYSTEM_SCHEMAS.has(row.schema_name)) {
         continue;
       }
 
+      schemaSet.add(row.schema_name);
       const relationKey = `${row.schema_name}.${row.relation_name}`;
       if (!relationMap.has(relationKey)) {
         relationMap.set(relationKey, {
@@ -1789,6 +1863,7 @@ function useSqlCatalog(catalogRows) {
     );
 
     return {
+      schemas: [...schemaSet].sort(),
       relations,
       columns,
     };
@@ -1819,8 +1894,36 @@ function SqlSuggestionList({ activeIndex, position, suggestions, onSelectSuggest
   );
 }
 
+function SqlConsoleOutput({ error, query, result }) {
+  return (
+    <div className="sql-output">
+      {query ? (
+        <div className="sql-output-query">
+          <span aria-hidden="true">&gt;</span>
+          <pre>{query}</pre>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="sql-output-error">{error}</div>
+      ) : (
+        <>
+          <SqlResultsTable result={result} emptyMessage="A consulta PostgreSQL não retornou linhas." />
+          {result ? (
+            <p className="sql-row-count">
+              {result.row_count} {result.row_count === 1 ? "row" : "rows"}
+              {result.truncated ? ` (limit ${result.max_rows})` : ""}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 function SqlWorkspace({ adminRequest }) {
   const [localSql, setLocalSql] = useState(DEFAULT_POSTGRES_SQL);
+  const [lastExecutedSql, setLastExecutedSql] = useState(DEFAULT_POSTGRES_SQL);
   const [localSqlResult, setLocalSqlResult] = useState(null);
   const [localSqlError, setLocalSqlError] = useState("");
   const [localSqlStatus, setLocalSqlStatus] = useState("syncing");
@@ -1833,11 +1936,20 @@ function SqlWorkspace({ adminRequest }) {
   const editorShellRef = useRef(null);
   const sqlFormRef = useRef(null);
   const suggestionListRef = useRef(null);
+  const suppressedSuggestionTokenRef = useRef("");
   const catalog = useSqlCatalog(catalogRows);
   const editorContext = useMemo(() => getSqlEditorContext(localSql, cursorPosition), [cursorPosition, localSql]);
 
   const currentSuggestions = useMemo(() => {
     const currentToken = editorContext.currentWord;
+    const relationToken = editorContext.qualifiedToken;
+    const schemaSuggestions = catalog.schemas.map((schemaName) => ({
+      id: `schema:${schemaName}`,
+      label: schemaName,
+      detail: "schema",
+      insertText: `${schemaName}.`,
+      kind: "schema",
+    }));
     const relationSuggestions = catalog.relations.map((relation) => ({
       id: `relation:${relation.key}`,
       label: `${relation.schema}.${relation.name}`,
@@ -1852,23 +1964,58 @@ function SqlWorkspace({ adminRequest }) {
       insertText: column.name,
       kind: "column",
     }));
+    const functionSuggestions = SQL_FUNCTION_SUGGESTIONS.map((item) => ({
+      id: `function:${item.label}`,
+      label: item.label,
+      detail: item.detail,
+      insertText: item.insertText,
+      kind: "function",
+    }));
 
-    let source = [...relationSuggestions, ...columnSuggestions];
-    if (RELATION_CONTEXT_KEYWORDS.has(editorContext.previousWord)) {
-      source = relationSuggestions;
+    let source = [...relationSuggestions, ...schemaSuggestions, ...columnSuggestions, ...functionSuggestions];
+    if (editorContext.qualifier) {
+      source = relationSuggestions.filter((item) => item.label.toLowerCase().startsWith(`${editorContext.qualifier}.`));
+    } else if (RELATION_CONTEXT_KEYWORDS.has(editorContext.previousWord)) {
+      source = [...schemaSuggestions, ...relationSuggestions];
     } else if (COLUMN_CONTEXT_KEYWORDS.has(editorContext.previousWord)) {
-      source = columnSuggestions;
+      source = [...columnSuggestions, ...functionSuggestions];
     }
 
-    const filtered = currentToken
-      ? source.filter((item) => item.label.toLowerCase().startsWith(currentToken))
+    const filterToken = editorContext.qualifier ? `${editorContext.qualifier}.${relationToken}` : currentToken;
+    const filtered = filterToken
+      ? source.filter((item) => item.label.toLowerCase().startsWith(filterToken))
       : source;
 
     return filtered.slice(0, 12);
-  }, [catalog.columns, catalog.relations, editorContext.currentWord, editorContext.previousWord]);
+  }, [
+    catalog.columns,
+    catalog.relations,
+    catalog.schemas,
+    editorContext.currentWord,
+    editorContext.previousWord,
+    editorContext.qualifiedToken,
+    editorContext.qualifier,
+  ]);
 
   function updateSuggestionPosition(target = editorRef.current) {
-    setSuggestionPosition(getSqlSuggestionPosition(target, editorShellRef.current));
+    setSuggestionPosition(getSqlSuggestionPosition(target, editorShellRef.current, currentSuggestions.length));
+  }
+
+  function suggestionSuppressionKey(sql, position) {
+    const context = getSqlEditorContext(sql, position);
+    return `${context.tokenRange.start}:${context.tokenRange.end}:${context.currentWord}`;
+  }
+
+  function openSuggestionsForToken(target) {
+    const nextCursorPosition = target.selectionStart ?? target.value.length;
+    const nextSuppressionKey = suggestionSuppressionKey(target.value, nextCursorPosition);
+
+    if (suppressedSuggestionTokenRef.current === nextSuppressionKey) {
+      return;
+    }
+
+    setIsSuggestionOpen(true);
+    updateSuggestionPosition(target);
   }
 
   useLayoutEffect(() => {
@@ -1945,6 +2092,7 @@ function SqlWorkspace({ adminRequest }) {
         }
         setCatalogRows(catalogResponse.items || []);
         setLocalSqlResult(queryResponse);
+        setLastExecutedSql(DEFAULT_POSTGRES_SQL);
         setLocalSqlStatus("ready");
       } catch (error) {
         if (!cancelled) {
@@ -1972,6 +2120,7 @@ function SqlWorkspace({ adminRequest }) {
         body: { sql: localSql, max_rows: 500 },
       });
       setLocalSqlResult(result);
+      setLastExecutedSql(localSql);
       setLocalSqlStatus("ready");
     } catch (error) {
       setLocalSqlResult(null);
@@ -1983,20 +2132,17 @@ function SqlWorkspace({ adminRequest }) {
   function handleEditorChange(event) {
     setLocalSql(event.target.value);
     setCursorPosition(event.target.selectionStart ?? event.target.value.length);
-    setIsSuggestionOpen(true);
     setActiveSuggestionIndex(0);
-    updateSuggestionPosition(event.target);
+    openSuggestionsForToken(event.target);
   }
 
   function handleEditorSelection(event) {
     setCursorPosition(event.target.selectionStart ?? 0);
-    setIsSuggestionOpen(true);
-    updateSuggestionPosition(event.target);
+    openSuggestionsForToken(event.target);
   }
 
   function handleEditorFocus(event) {
-    setIsSuggestionOpen(true);
-    updateSuggestionPosition(event.target);
+    openSuggestionsForToken(event.target);
   }
 
   function handleEditorScroll(event) {
@@ -2014,6 +2160,28 @@ function SqlWorkspace({ adminRequest }) {
     setLocalSql(nextSql);
     setCursorPosition(nextCursor);
     setIsSuggestionOpen(false);
+    suppressedSuggestionTokenRef.current = "";
+
+    window.requestAnimationFrame(() => {
+      if (!target) {
+        return;
+      }
+
+      target.focus();
+      target.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  function insertEditorText(text) {
+    const target = editorRef.current;
+    const selectionStart = target?.selectionStart ?? cursorPosition;
+    const selectionEnd = target?.selectionEnd ?? cursorPosition;
+    const nextSql = `${localSql.slice(0, selectionStart)}${text}${localSql.slice(selectionEnd)}`;
+    const nextCursor = selectionStart + text.length;
+
+    setLocalSql(nextSql);
+    setCursorPosition(nextCursor);
+    suppressedSuggestionTokenRef.current = "";
 
     window.requestAnimationFrame(() => {
       if (!target) {
@@ -2026,6 +2194,31 @@ function SqlWorkspace({ adminRequest }) {
   }
 
   function handleEditorKeyDown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsSuggestionOpen(false);
+      suppressedSuggestionTokenRef.current = suggestionSuppressionKey(localSql, cursorPosition);
+      return;
+    }
+
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      insertEditorText("\n");
+      return;
+    }
+
+    if (event.key === " " && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      if (currentSuggestions.length) {
+        handleSuggestionSelect(currentSuggestions[activeSuggestionIndex] || currentSuggestions[0]);
+      } else {
+        suppressedSuggestionTokenRef.current = "";
+        setIsSuggestionOpen(true);
+        updateSuggestionPosition();
+      }
+      return;
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (localSqlStatus !== "syncing") {
@@ -2056,71 +2249,65 @@ function SqlWorkspace({ adminRequest }) {
       return;
     }
 
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setIsSuggestionOpen(false);
-    }
   }
 
   return (
-    <section className="page">
-      <PageHeader title="SQL" />
+    <section className="page sql-page">
+      <div className="sql-console">
+        <div className="sql-result-area">
+          <SqlConsoleOutput error={localSqlError} query={lastExecutedSql} result={localSqlResult} />
+        </div>
 
-      <Panel>
-        <div className="stack">
-          <div className="sql-console">
-            <div className="sql-result-area">
-              <SqlResultsTable result={localSqlResult} emptyMessage="A consulta PostgreSQL não retornou linhas." />
-            </div>
-
-            <form ref={sqlFormRef} className="sql-console-form" onSubmit={handleRunLocalSql}>
-              <label className="field sql-editor-field">
-                <span>SQL</span>
-                <div ref={editorShellRef} className="sql-editor-shell">
-                  <textarea
-                    ref={editorRef}
-                    className="sql-editor-textarea"
-                    value={localSql}
-                    onChange={handleEditorChange}
-                    onFocus={handleEditorFocus}
-                    onBlur={() => setIsSuggestionOpen(false)}
-                    onClick={handleEditorSelection}
-                    onKeyDown={handleEditorKeyDown}
-                    onKeyUp={handleEditorSelection}
-                    onScroll={handleEditorScroll}
-                    onSelect={handleEditorSelection}
-                    placeholder={DEFAULT_POSTGRES_SQL}
-                    spellCheck={false}
-                  />
-                  {isSuggestionOpen && currentSuggestions.length ? (
-                    <SqlSuggestionList
-                      activeIndex={activeSuggestionIndex}
-                      position={suggestionPosition}
-                      suggestions={currentSuggestions}
-                      onSelectSuggestion={handleSuggestionSelect}
-                      suggestionListRef={suggestionListRef}
-                    />
-                  ) : null}
-                </div>
-              </label>
-
-              <div className="toolbar-row sql-console-toolbar">
-                <button type="submit" disabled={localSqlStatus === "syncing"}>
-                  Executar SQL
-                </button>
-                <button type="button" className="secondary" onClick={loadPostgresCatalog} disabled={localSqlStatus === "syncing"}>
-                  Atualizar catalogo
-                </button>
-                <span className={`status-badge ${statusTone(localSqlStatus === "error" ? "error" : localSqlStatus === "ready" ? "ready" : "pending")}`}>
-                  {localSqlStatus === "ready" ? "postgres pronto" : localSqlStatus === "error" ? "erro postgres" : "consultando"}
-                </span>
-              </div>
-            </form>
+        <form ref={sqlFormRef} className="sql-console-form" onSubmit={handleRunLocalSql}>
+          <div ref={editorShellRef} className="sql-editor-shell">
+            <textarea
+              ref={editorRef}
+              aria-label="SQL"
+              className="sql-editor-textarea"
+              value={localSql}
+              onChange={handleEditorChange}
+              onFocus={handleEditorFocus}
+              onBlur={() => setIsSuggestionOpen(false)}
+              onClick={handleEditorSelection}
+              onKeyDown={handleEditorKeyDown}
+              onKeyUp={handleEditorSelection}
+              onScroll={handleEditorScroll}
+              onSelect={handleEditorSelection}
+              placeholder={DEFAULT_POSTGRES_SQL}
+              spellCheck={false}
+            />
+            {isSuggestionOpen && currentSuggestions.length ? (
+              <SqlSuggestionList
+                activeIndex={activeSuggestionIndex}
+                position={suggestionPosition}
+                suggestions={currentSuggestions}
+                onSelectSuggestion={handleSuggestionSelect}
+                suggestionListRef={suggestionListRef}
+              />
+            ) : null}
           </div>
 
-          {localSqlError ? <p className="error-inline">{localSqlError}</p> : null}
-        </div>
-      </Panel>
+          <div className="toolbar-row sql-console-toolbar">
+            <button type="submit" disabled={localSqlStatus === "syncing"}>
+              Executar SQL
+            </button>
+            <button type="button" className="secondary" onClick={loadPostgresCatalog} disabled={localSqlStatus === "syncing"}>
+              Atualizar catálogo
+            </button>
+            <span className={`status-badge ${statusTone(localSqlStatus === "error" ? "error" : localSqlStatus === "ready" ? "ready" : "pending")}`}>
+              {localSqlStatus === "ready" ? "Database pronto" : localSqlStatus === "error" ? "Erro no Banco" : "Consultando"}
+            </span>
+          </div>
+        </form>
+      </div>
+
+      <div className="sql-shortcut-help" aria-label="Atalhos SQL">
+        <span><kbd>Enter</kbd> executa</span>
+        <span><kbd>Ctrl</kbd> + <kbd>Enter</kbd> nova linha</span>
+        <span><kbd>Ctrl</kbd> + <kbd>Space</kbd> autocompleta</span>
+        <span><kbd>Tab</kbd> autocompleta</span>
+        <span><kbd>Esc</kbd> fecha sugestões</span>
+      </div>
     </section>
   );
 }
@@ -2194,9 +2381,7 @@ export default function App() {
       const response = await adminRequest("/api/admin/connections/pnp");
       const nextConnections = response.items || [];
       setConnections(nextConnections);
-      setSelectedConnectionKey((current) =>
-        nextConnections.some((item) => item.connection_key === current) ? current : nextConnections[0]?.connection_key || "",
-      );
+      setSelectedConnectionKey((current) => (nextConnections.some((item) => item.connection_key === current) ? current : ""));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar as conexoes.");
     }
@@ -2212,9 +2397,7 @@ export default function App() {
       const response = await adminRequest("/api/admin/pipelines/pnp");
       const nextPipelines = response.items || [];
       setPipelines(nextPipelines);
-      setSelectedPipelineKey((current) =>
-        nextPipelines.some((item) => item.instance_key === current) ? current : nextPipelines[0]?.instance_key || "",
-      );
+      setSelectedPipelineKey((current) => (nextPipelines.some((item) => item.instance_key === current) ? current : ""));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar as pipelines.");
     }
@@ -2244,7 +2427,7 @@ export default function App() {
       const detailResponse = await adminRequest(`/api/admin/connections/pnp/${connectionKey}`);
       setConnectionDetail(detailResponse);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Falha ao carregar a conexao.");
+      setError(requestError instanceof Error ? requestError.message : "Falha ao carregar a conexão.");
     }
   }
 
@@ -2346,12 +2529,12 @@ export default function App() {
         body: connectionForm,
       });
       setConnectionForm(INITIAL_CONNECTION_FORM);
-      setNotice(`Conexao ${created.connection_name} criada com sucesso.`);
+      setNotice(`conexão ${created.connection_name} criada com sucesso.`);
       await loadConnections();
       setSelectedConnectionKey(created.connection_key);
-      navigate(CONNECTION_DETAIL_ROUTE);
+      navigate(CONNECTIONS_ROUTE);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Falha ao criar conexao.");
+      setError(requestError instanceof Error ? requestError.message : "Falha ao criar conexão.");
     } finally {
       setCreateState("idle");
     }
@@ -2501,7 +2684,7 @@ export default function App() {
   }
 
   async function handleDeleteConnection(instanceKey) {
-    if (!instanceKey || !window.confirm("Excluir esta conexao?")) {
+    if (!instanceKey || !window.confirm("Excluir esta conexão?")) {
       return;
     }
 
@@ -2511,7 +2694,7 @@ export default function App() {
 
     try {
       const response = await adminRequest(`/api/admin/connections/pnp/${instanceKey}`, { method: "DELETE" });
-      setNotice(`Conexao ${response.connection_name} excluida com sucesso.`);
+      setNotice(`conexão ${response.connection_name} excluida com sucesso.`);
       setSelectedConnectionKey("");
       setConnectionDetail(null);
       setSelectedPipelineKey("");
@@ -2521,7 +2704,7 @@ export default function App() {
       await loadPipelines();
       navigate(CONNECTIONS_ROUTE);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Falha ao excluir conexao.");
+      setError(requestError instanceof Error ? requestError.message : "Falha ao excluir conexão.");
     } finally {
       setDeleteAction("");
     }
@@ -2565,6 +2748,7 @@ export default function App() {
         connections={connections}
         selectedPipelineKey={selectedPipelineKey}
         onSelectPipeline={setSelectedPipelineKey}
+        onClosePipeline={() => setSelectedPipelineKey("")}
         overview={pipelineOverview}
         dagRuns={dagRuns}
         pipelineAction={pipelineAction}
@@ -2593,11 +2777,10 @@ export default function App() {
         connections={connections}
         selectedConnectionKey={selectedConnectionKey}
         detail={connectionDetail}
-        onOpenConnection={(connectionKey) => {
-          setSelectedConnectionKey(connectionKey);
-          navigate(CONNECTION_DETAIL_ROUTE);
-        }}
+        onOpenConnection={setSelectedConnectionKey}
+        onCloseConnection={() => setSelectedConnectionKey("")}
         onOpenPipeline={(pipelineKey) => {
+          setSelectedConnectionKey("");
           setSelectedPipelineKey(pipelineKey);
           navigate("/pipelines");
         }}

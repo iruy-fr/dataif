@@ -124,7 +124,7 @@ No endpoint atual, a normalização correta não é uma única visão por `indic
 
 Entidades recomendadas:
 
-- `staging.stg_pnp_ingestao_execucoes`
+- `staging.stg_pnp_ingestão_execucoes`
 - `staging.stg_pnp_microdados_base`
 - `staging.stg_pnp_matriculas`
 - `staging.stg_pnp_eficiencia_academica`
@@ -152,14 +152,14 @@ Foram adicionados ao projeto:
 
 Esses scripts criam:
 
-- `staging.stg_pnp_ingestao_execucoes`
+- `staging.stg_pnp_ingestão_execucoes`
 - `staging.stg_pnp_microdados_base`
 - `staging.stg_pnp_matriculas`
 - `staging.stg_pnp_eficiencia_academica`
 - `staging.stg_pnp_servidores`
 - `staging.stg_pnp_financeiro`
 - `curated.vw_pnp_admin_qualidade_dados`
-- `curated.vw_pnp_admin_ingestao_raw`
+- `curated.vw_pnp_admin_ingestão_raw`
 - `curated.vw_pnp_admin_matriculas_perfil`
 - `curated.vw_pnp_admin_matriculas_oferta`
 - `curated.vw_pnp_admin_eficiencia_situacao`
@@ -172,7 +172,7 @@ Esses scripts criam:
 - Se a prioridade for permanência e sucesso, começar por `vw_pnp_admin_eficiencia_situacao`.
 - Se a prioridade for gestão de pessoas, começar por `vw_pnp_admin_servidores_quadro`.
 - Se a prioridade for orçamento, começar por `vw_pnp_admin_financeiro_execucao`.
-- Se a prioridade for governança do pipeline, começar por `vw_pnp_admin_ingestao_raw` e `vw_pnp_admin_qualidade_dados`.
+- Se a prioridade for governança do pipeline, começar por `vw_pnp_admin_ingestão_raw` e `vw_pnp_admin_qualidade_dados`.
 
 ## Próximo passo recomendado
 

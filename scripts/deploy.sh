@@ -13,7 +13,7 @@ usage() {
 Uso: ./scripts/deploy.sh stg|prod [--llm]
 
 stg   Sobe ambiente local de teste com variaveis presetadas.
-prod  Sobe ambiente local de producao com configuracao interativa.
+prod  Sobe ambiente local de producao com configuração interativa.
 
 Opcoes:
   --llm  Inclui Ollama e bootstrap do modelo local.

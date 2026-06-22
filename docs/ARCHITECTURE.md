@@ -18,8 +18,8 @@ Integrar fontes governamentais de forma plugavel, persistir os dados em PostgreS
 ## Fluxo atual da PNP
 1. O admin cria uma instancia PNP na tela de conexoes.
 2. A API resolve o catalogo publico do relatorio Power BI.
-3. O recorte de anos e tipos vira uma configuracao persistida em `config.connector_endpoints`.
-4. O Airflow executa a validacao das fontes ou a ingestao completa.
+3. O recorte de anos e tipos vira uma configuração persistida em `config.connector_endpoints`.
+4. O Airflow executa a validação das fontes ou a ingestão completa.
 5. O conector baixa os microdados publicos, registra manifestos em `raw.nilo_pecanha_assets` e carrega os registros em `raw.nilo_pecanha_records`.
 6. O tratamento posterior dos dados ocorre manualmente no banco, promovendo de `raw` para `staging` e depois para `curated`.
 
@@ -29,7 +29,7 @@ Integrar fontes governamentais de forma plugavel, persistir os dados em PostgreS
 - `vanna_user`: leitura em `curated`
 - embeds do Metabase sao assinados no backend
 - Vanna continua restrito ao schema `curated` e executa SQL somente depois do `SQLGuard`
-- operacoes administrativas exigem sessao OIDC valida
+- operacoes administrativas exigem sessão OIDC valida
 
 ## Vanna AI
 - O frontend envia perguntas pela tela `Inicio` para `/api/vanna/ask`.
@@ -38,4 +38,4 @@ Integrar fontes governamentais de forma plugavel, persistir os dados em PostgreS
 - O contrato detalhado esta em `docs/VANNA_CURATED_ONLY.md`.
 
 ## Decisao estrutural
-O caminho legado de browser assistido foi removido. A operacao oficial da PNP agora depende apenas do catalogo publico de microdados via Power BI, com o Airflow limitado a extracao e validacao em `raw`.
+O caminho legado de browser assistido foi removido. A operacao oficial da PNP agora depende apenas do catalogo publico de microdados via Power BI, com o Airflow limitado a extracao e validação em `raw`.

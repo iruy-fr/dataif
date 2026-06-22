@@ -1,7 +1,7 @@
 # Vanna AI curated-only
 
 ## Objetivo
-O Vanna AI e usado como camada NL2SQL para consultas assistidas sobre dados analiticos ja publicados. Ele nao participa da ingestao, nao transforma dados e nao acessa `raw`, `staging`, `config`, `audit`, `mart` ou `public`.
+O Vanna AI e usado como camada NL2SQL para consultas assistidas sobre dados analiticos ja publicados. Ele nao participa da ingestão, nao transforma dados e nao acessa `raw`, `staging`, `config`, `audit`, `mart` ou `public`.
 
 Fluxo oficial:
 

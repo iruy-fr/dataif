@@ -44,7 +44,7 @@ Serviços principais:
 1. Abrir `http://localhost:5173`
 2. Clicar no ícone de admin
 3. Autenticar com `dataif-admin` / `admin`
-4. Operar as páginas `Conexões`, `Pipelines`, `Dashboards`, `SQL` e `Configuracoes Admin`
+4. Operar as páginas `Conexões`, `Pipelines`, `Dashboards`, `SQL` e `Configurações Admin`
 
 ## Fluxo administrativo atual da PNP
 
@@ -56,7 +56,7 @@ Serviços principais:
 6. Executar `Validar fontes`
 7. Executar `Executar ingestão`
 8. Acompanhar DAG runs, manifestos e status de ingestão `raw` pela própria interface
-9. Ajustar provider/modelo do Vanna e criar/remover admins em `Configuracoes Admin`, quando necessário
+9. Ajustar provider/modelo do Vanna e criar/remover admins em `Configurações Admin`, quando necessário
 
 ## Provisionamento de admins
 

@@ -218,7 +218,7 @@ def print_operational_summary(run_row: dict[str, Any], manifest: dict[str, Any],
     raw_total = sum(int(row["raw_rows"]) for row in raw_counts)
     manifest_total = sum(int(item.get("row_count") or 0) for item in manifest_downloads)
 
-    print("Validacao operacional")
+    print("Validação operacional")
     print(f"- run_id: {run_row['run_id']}")
     print(f"- status audit: {run_row['status']}")
     print(f"- periodo: {run_row['started_at']} -> {run_row['finished_at']}")
@@ -258,7 +258,7 @@ def print_analytical_summary(core_checks: dict[str, Any], profile: list[dict[str
     failures: list[str] = []
 
     print("")
-    print("Primeira validacao analitica")
+    print("Primeira validação analitica")
     print(f"- total_rows: {core_checks.get('total_rows', 0)}")
     for key in (
         "missing_id",
