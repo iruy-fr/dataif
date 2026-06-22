@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAdminAuth } from "./adminAuth";
-import pnpLogoUrl from "./assets/pnp-horizontal.svg";
 import AppHeader from "./components/AppHeader";
 import { cx } from "./utils/cx";
 
@@ -187,40 +186,6 @@ function Panel({ title, action, className, children }) {
   );
 }
 
-function EntityModal({ title, actions, onClose, children }) {
-  useEffect(() => {
-    function handleKeyDown(event) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2>{title}</h2>
-          <button type="button" className="secondary" onClick={onClose}>
-            Fechar
-          </button>
-        </div>
-        {actions ? <div className="modal-actions">{actions}</div> : null}
-        <div className="modal-body">{children}</div>
-      </section>
-    </div>
-  );
-}
-
 function StatusBadge({ status }) {
   return <span className={`status-badge ${statusTone(status)}`}>{formatStatus(status)}</span>;
 }
@@ -238,19 +203,6 @@ function SummaryGrid({ items, className }) {
   );
 }
 
-function DetailList({ items }) {
-  return (
-    <dl className="modal-detail-list">
-      {items.map((item) => (
-        <div key={item.label}>
-          <dt>{item.label}</dt>
-          <dd>{item.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 function RunsTable({ runs, emptyMessage }) {
   return (
     <div className="table-shell">
@@ -259,7 +211,7 @@ function RunsTable({ runs, emptyMessage }) {
           <tr>
             <th>DAG</th>
             <th>Status</th>
-            <th>Inicio</th>
+            <th>Início</th>
             <th>Fim</th>
           </tr>
         </thead>
@@ -641,7 +593,7 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
 
   return (
     <section className="page">
-      <PageHeader title="Configurações do Administrador">Persistencia de LLM e gestao de admins do Keycloak.</PageHeader>
+      <PageHeader title="Configurações do Administrador">Persistência de LLM e gestão de admins do Keycloak.</PageHeader>
 
       {localNotice ? <p className="notice-banner">{localNotice}</p> : null}
       {localError ? <p className="error-banner">{localError}</p> : null}
@@ -650,9 +602,9 @@ function AdminSettingsPage({ auth, onLoginRequest, adminRequest }) {
         <SummaryGrid
           items={[
             { label: "Provider", value: llmForm.provider },
-            { label: "Status", value: llmStatus?.available ? "disponivel" : "indisponivel" },
+            { label: "Status", value: llmStatus?.available ? "disponível" : "indisponível" },
             { label: "Admins", value: String(users.length) },
-            { label: "Chave Maritaca", value: llmForm.maritaca.api_key_scope === "personal" ? "propria" : llmForm.maritaca.has_api_key ? "global" : "vazia" },
+            { label: "Chave Maritaca", value: llmForm.maritaca.api_key_scope === "personal" ? "própria" : llmForm.maritaca.has_api_key ? "global" : "vazia" },
           ]}
         />
       </Panel>
@@ -1129,7 +1081,6 @@ function PipelinesPage({
   connections,
   selectedPipelineKey,
   onSelectPipeline,
-  onClosePipeline,
   overview,
   dagRuns,
   pipelineAction,
@@ -1293,136 +1244,132 @@ function PipelinesPage({
         }
       />
 
-      <div className="entity-card-grid">
-        {pipelines.map((instance) => {
-          const isSelected = selectedPipelineKey === instance.instance_key;
-          const status = isSelected ? selectedOverview?.ingestion?.status || "pending" : instance.is_active ? "ready" : "pending";
+      <div className="layout-sidebar">
+        <Panel title="Pipelines">
+          <div className="selection-list">
+            {pipelines.map((instance) => {
+              const isSelected = selectedPipelineKey === instance.instance_key;
+              const status = isSelected ? selectedOverview?.ingestion?.status || "pending" : "pending";
 
-          return (
-            <button
-              key={instance.instance_key}
-              type="button"
-              className="entity-card"
-              onClick={() => onSelectPipeline(instance.instance_key)}
-            >
-              <div className="entity-card-logo" aria-hidden="true">
-                <img src={pnpLogoUrl} alt="" />
-              </div>
-              <div className="entity-card-content">
-                <div className="entity-card-head">
-                  <h3>{instance.instance_name}</h3>
-                </div>
-                <dl className="entity-card-meta">
-                  <div>
-                    <dt>conexão</dt>
-                    <dd>{instance.connection_name || instance.connection_key}</dd>
+              return (
+                <button
+                  key={instance.instance_key}
+                  type="button"
+                  className={`selection-item${isSelected ? " selected" : ""}`}
+                  onClick={() => onSelectPipeline(instance.instance_key)}
+                >
+                  <div className="selection-item-head">
+                    <strong>{instance.instance_name}</strong>
+                    <StatusBadge status={status} />
                   </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>
-                      <StatusBadge status={status} />
-                    </dd>
+                  <div className="selection-item-body">
+                    <span>{instance.connection_name || instance.connection_key}</span>
+                    <span>{serializeSelection(instance.selected_years) || "Sem anos"}</span>
+                    <span>{serializeSelection(instance.selected_microdados_types) || "Sem tipos"}</span>
+                    <span>{instance.schedule || "-"}</span>
                   </div>
-                </dl>
-              </div>
-            </button>
-          );
-        })}
+                </button>
+              );
+            })}
 
-        {pipelines.length === 0 ? <p className="muted">Nenhuma pipeline cadastrada.</p> : null}
-      </div>
-
-      {selectedPipeline ? (
-        <EntityModal
-          title={selectedPipeline.instance_name}
-          onClose={onClosePipeline}
-          actions={
-            <>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onTriggerOperation("validate-sources")}
-                disabled={pipelineAction === "validate-sources"}
-              >
-                {pipelineAction === "validate-sources" ? "Validando..." : "Validar"}
-              </button>
-              <button
-                type="button"
-                onClick={() => onTriggerOperation("full-sync")}
-                disabled={pipelineAction === "full-sync"}
-              >
-                {pipelineAction === "full-sync" ? "Executando..." : "Executar"}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onDeletePipeline(selectedPipeline.instance_key)}
-                disabled={deleteAction === selectedPipeline.instance_key}
-              >
-                {deleteAction === selectedPipeline.instance_key ? "Excluindo..." : "Excluir pipeline"}
-              </button>
-            </>
-          }
-        >
-          <div className="stack">
-            <section className="modal-content-section">
-              <h3>Resumo</h3>
-              <DetailList
-                items={[
-                  { label: "conexão", value: selectedPipeline.connection_name || selectedPipeline.connection_key },
-                  { label: "Status", value: <StatusBadge status={selectedOverview?.ingestion?.status || "pending"} /> },
-                  { label: "Anos", value: serializeSelection(selectedPipeline.selected_years) || "-" },
-                  { label: "Tipos", value: serializeSelection(selectedPipeline.selected_microdados_types) || "-" },
-                  { label: "Cron", value: selectedPipeline.schedule || "-" },
-                ]}
-              />
-            </section>
-
-            <div className="modal-split-grid">
-              <section className="modal-content-section">
-                <h3>Diagnostico</h3>
-                <div className="record-list">
-                  {(selectedOverview?.diagnostics || []).map((item) => (
-                    <div key={item.endpoint_key} className="record-row">
-                      <div>
-                        <strong>{item.source_label || item.endpoint_key}</strong>
-                        <span>{item.operational_stage}</span>
-                      </div>
-                      <StatusBadge status={item.operational_status} />
-                    </div>
-                  ))}
-                  {!selectedOverview ? <p className="muted">Carregando detalhes.</p> : null}
-                  {selectedOverview && (selectedOverview.diagnostics || []).length === 0 ? (
-                    <p className="muted">Sem diagnostico.</p>
-                  ) : null}
-                </div>
-              </section>
-
-              <section className="modal-content-section">
-                <h3>Timeline</h3>
-                <div className="record-list">
-                  {(selectedOverview?.run_events || []).map((event) => (
-                    <div key={`${event.stage}-${event.run_id}`} className="record-row">
-                      <div>
-                        <strong>{event.stage_label}</strong>
-                        <span>{formatTimestamp(event.timestamp)}</span>
-                      </div>
-                      <StatusBadge status={event.state} />
-                    </div>
-                  ))}
-                  {!selectedOverview ? <p className="muted">Carregando eventos.</p> : null}
-                  {selectedOverview && (selectedOverview.run_events || []).length === 0 ? <p className="muted">Sem eventos.</p> : null}
-                </div>
-              </section>
-            </div>
-
-            <section className="modal-content-section">
-              <h3>DAG runs</h3>
-              <RunsTable runs={dagRuns} emptyMessage="Nenhuma execucao recente." />
-            </section>
+            {pipelines.length === 0 ? <p className="muted">Nenhuma pipeline cadastrada.</p> : null}
           </div>
-        </EntityModal>
-      ) : null}
+        </Panel>
+
+        <div className="stack">
+          <Panel
+            title={selectedPipeline ? selectedPipeline.instance_name : "Operacao"}
+            action={
+              selectedPipeline ? (
+                <>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => onTriggerOperation("validate-sources")}
+                    disabled={pipelineAction === "validate-sources"}
+                  >
+                    {pipelineAction === "validate-sources" ? "Validando..." : "Validar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onTriggerOperation("full-sync")}
+                    disabled={pipelineAction === "full-sync"}
+                  >
+                    {pipelineAction === "full-sync" ? "Executando..." : "Executar"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => onDeletePipeline(selectedPipeline.instance_key)}
+                    disabled={deleteAction === selectedPipeline.instance_key}
+                  >
+                    {deleteAction === selectedPipeline.instance_key ? "Excluindo..." : "Excluir pipeline"}
+                  </button>
+                </>
+              ) : null
+            }
+          >
+            {selectedOverview && selectedPipeline ? (
+              <div className="stack">
+                <SummaryGrid
+                  items={[
+                    { label: "conexão", value: selectedPipeline.connection_name || selectedPipeline.connection_key },
+                    { label: "Status", value: formatStatus(selectedOverview.ingestion.status) },
+                    { label: "Anos", value: serializeSelection(selectedPipeline.selected_years) || "-" },
+                    { label: "Tipos", value: serializeSelection(selectedPipeline.selected_microdados_types) || "-" },
+                    { label: "Cron", value: selectedPipeline.schedule || "-" },
+                  ]}
+                />
+
+                <div className="card-grid two-col">
+                  <div className="subsection">
+                    <h3>Diagnóstico</h3>
+                    <div className="record-list">
+                      {(selectedOverview.diagnostics || []).map((item) => (
+                        <div key={item.endpoint_key} className="record-row">
+                          <div>
+                            <strong>{item.source_label || item.endpoint_key}</strong>
+                            <span>{item.operational_stage}</span>
+                          </div>
+                          <StatusBadge status={item.operational_status} />
+                        </div>
+                      ))}
+                      {(selectedOverview.diagnostics || []).length === 0 ? <p className="muted">Sem diagnóstico.</p> : null}
+                    </div>
+                  </div>
+
+                  <div className="subsection">
+                    <h3>Timeline</h3>
+                    <div className="record-list">
+                      {(selectedOverview.run_events || []).map((event) => (
+                        <div key={`${event.stage}-${event.run_id}`} className="record-row">
+                          <div>
+                            <strong>{event.stage_label}</strong>
+                            <span>{formatTimestamp(event.timestamp)}</span>
+                          </div>
+                          <StatusBadge status={event.state} />
+                        </div>
+                      ))}
+                      {(selectedOverview.run_events || []).length === 0 ? <p className="muted">Sem eventos.</p> : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <p>Selecione uma pipeline.</p>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="DAG runs">
+            <RunsTable
+              runs={selectedPipeline ? dagRuns : []}
+              emptyMessage={selectedPipeline ? "Nenhuma execução recente." : "Selecione uma pipeline."}
+            />
+          </Panel>
+        </div>
+      </div>
     </section>
   );
 }
@@ -1439,7 +1386,6 @@ function ConnectionsPage({
   selectedConnectionKey,
   detail,
   onOpenConnection,
-  onCloseConnection,
   onOpenPipeline,
   deleteAction,
   onDeleteConnection,
@@ -1502,107 +1448,64 @@ function ConnectionsPage({
     );
   }
 
-  return (
-    <section className="page">
-      <PageHeader
-        title="Conexões"
-        actions={
-          <button type="button" onClick={() => navigate(CONNECTION_CREATE_ROUTE)}>
-            Nova conexão
-          </button>
-        }
-      />
-
-      <div className="entity-card-grid">
-        {connections.map((instance) => (
-          <button
-            key={instance.connection_key}
-            type="button"
-            className="entity-card"
-            onClick={() => onOpenConnection(instance.connection_key)}
-          >
-            <div className="entity-card-logo" aria-hidden="true">
-              <img src={pnpLogoUrl} alt="" />
-            </div>
-            <div className="entity-card-content">
-              <div className="entity-card-head">
-                <h3>{instance.connection_name}</h3>
-              </div>
-              <dl className="entity-card-meta">
-                <div>
-                  <dt>Chave</dt>
-                  <dd>{instance.connection_key}</dd>
-                </div>
-                <div>
-                  <dt>Status</dt>
-                  <dd>
-                    <StatusBadge status={instance.validation_status || (instance.is_active ? "ready" : "pending")} />
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </button>
-        ))}
-
-        {connections.length === 0 ? <p className="muted">Nenhuma conexão cadastrada.</p> : null}
-      </div>
-
-      {selectedConnection ? (
-        <EntityModal
-          title={selectedConnection.connection_name}
-          onClose={onCloseConnection}
+  if (route === CONNECTION_DETAIL_ROUTE) {
+    return (
+      <section className="page">
+        <PageHeader
+          title={selectedConnection?.connection_name || "conexão"}
           actions={
             <>
+              <button type="button" className="secondary" onClick={() => navigate(CONNECTIONS_ROUTE)}>
+                Voltar
+              </button>
+              {selectedConnection ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => onDeleteConnection(selectedConnection.connection_key)}
+                  disabled={deleteAction === selectedConnection.connection_key}
+                >
+                  {deleteAction === selectedConnection.connection_key ? "Excluindo..." : "Excluir conexão"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
-                  window.sessionStorage.setItem("dataif.connection.selected", selectedConnection.connection_key);
+                  window.sessionStorage.setItem("dataif.connection.selected", selectedConnection?.connection_key || "");
                   navigate(PIPELINE_CREATE_ROUTE);
                 }}
               >
                 Nova pipeline
               </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onDeleteConnection(selectedConnection.connection_key)}
-                disabled={deleteAction === selectedConnection.connection_key}
-              >
-                {deleteAction === selectedConnection.connection_key ? "Excluindo..." : "Excluir conexão"}
-              </button>
             </>
           }
-        >
+        />
+
+        {selectedConnection ? (
           <div className="stack">
-            <section className="modal-content-section">
-              <h3>Resumo</h3>
-              <DetailList
+            <Panel title="Resumo">
+              <SummaryGrid
                 items={[
                   { label: "Chave", value: selectedConnection.connection_key },
                   { label: "Status", value: selectedConnection.is_active ? "Ativa" : "Inativa" },
-                  {
-                    label: "Validação",
-                    value: <StatusBadge status={selectedConnection.validation_status || (selectedConnection.is_active ? "ready" : "pending")} />,
-                  },
+                  { label: "Validação", value: formatStatus(selectedConnection.validation_status) },
                   { label: "Pipelines", value: selectedConnection.pipeline_count || linkedPipelines.length },
                   { label: "Atualizado", value: formatTimestamp(selectedConnection.updated_at) },
                 ]}
               />
-            </section>
+            </Panel>
 
-            <section className="modal-content-section">
-              <h3>Validação</h3>
+            <Panel title="Validação">
               <div className="record-row">
                 <div>
-                  <strong>{selectedConnection.validation_message || "Sem mensagem de validação."}</strong>
+                  <strong>{selectedConnection.validation_message}</strong>
                   <span>{selectedConnection.page_url || "-"}</span>
                 </div>
-                <StatusBadge status={selectedConnection.validation_status || (selectedConnection.is_active ? "ready" : "pending")} />
+                <StatusBadge status={selectedConnection.validation_status} />
               </div>
-            </section>
+            </Panel>
 
-            <section className="modal-content-section">
-              <h3>Pipelines vinculadas</h3>
+            <Panel title="Pipelines vinculadas">
               <div className="record-list">
                 {linkedPipelines.map((pipeline) => (
                   <button
@@ -1624,10 +1527,54 @@ function ConnectionsPage({
                 ))}
                 {linkedPipelines.length === 0 ? <p className="muted">Nenhuma pipeline vinculada.</p> : null}
               </div>
-            </section>
+            </Panel>
           </div>
-        </EntityModal>
-      ) : null}
+        ) : (
+          <Panel>
+            <div className="empty-state">
+              <p>Selecione uma conexão.</p>
+            </div>
+          </Panel>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="page">
+      <PageHeader
+        title="Conexões"
+        actions={
+          <button type="button" onClick={() => navigate(CONNECTION_CREATE_ROUTE)}>
+            Nova conexão
+          </button>
+        }
+      />
+
+      <Panel>
+        <div className="record-list">
+          {connections.map((instance) => (
+            <button
+              key={instance.connection_key}
+              type="button"
+              className="selection-item"
+              onClick={() => onOpenConnection(instance.connection_key)}
+            >
+              <div className="selection-item-head">
+                <strong>{instance.connection_name}</strong>
+                <StatusBadge status={instance.validation_status || (instance.is_active ? "ready" : "pending")} />
+              </div>
+              <div className="selection-item-body">
+                <span>{instance.connection_key}</span>
+                <span>{instance.pipeline_count || 0} pipeline(s)</span>
+                <span>{formatTimestamp(instance.updated_at)}</span>
+              </div>
+            </button>
+          ))}
+
+          {connections.length === 0 ? <p className="muted">Nenhuma conexão cadastrada.</p> : null}
+        </div>
+      </Panel>
     </section>
   );
 }
@@ -2381,7 +2328,9 @@ export default function App() {
       const response = await adminRequest("/api/admin/connections/pnp");
       const nextConnections = response.items || [];
       setConnections(nextConnections);
-      setSelectedConnectionKey((current) => (nextConnections.some((item) => item.connection_key === current) ? current : ""));
+      setSelectedConnectionKey((current) =>
+        nextConnections.some((item) => item.connection_key === current) ? current : nextConnections[0]?.connection_key || "",
+      );
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar as conexoes.");
     }
@@ -2397,7 +2346,9 @@ export default function App() {
       const response = await adminRequest("/api/admin/pipelines/pnp");
       const nextPipelines = response.items || [];
       setPipelines(nextPipelines);
-      setSelectedPipelineKey((current) => (nextPipelines.some((item) => item.instance_key === current) ? current : ""));
+      setSelectedPipelineKey((current) =>
+        nextPipelines.some((item) => item.instance_key === current) ? current : nextPipelines[0]?.instance_key || "",
+      );
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao carregar as pipelines.");
     }
@@ -2532,7 +2483,7 @@ export default function App() {
       setNotice(`conexão ${created.connection_name} criada com sucesso.`);
       await loadConnections();
       setSelectedConnectionKey(created.connection_key);
-      navigate(CONNECTIONS_ROUTE);
+      navigate(CONNECTION_DETAIL_ROUTE);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Falha ao criar conexão.");
     } finally {
@@ -2748,7 +2699,6 @@ export default function App() {
         connections={connections}
         selectedPipelineKey={selectedPipelineKey}
         onSelectPipeline={setSelectedPipelineKey}
-        onClosePipeline={() => setSelectedPipelineKey("")}
         overview={pipelineOverview}
         dagRuns={dagRuns}
         pipelineAction={pipelineAction}
@@ -2777,10 +2727,11 @@ export default function App() {
         connections={connections}
         selectedConnectionKey={selectedConnectionKey}
         detail={connectionDetail}
-        onOpenConnection={setSelectedConnectionKey}
-        onCloseConnection={() => setSelectedConnectionKey("")}
+        onOpenConnection={(connectionKey) => {
+          setSelectedConnectionKey(connectionKey);
+          navigate(CONNECTION_DETAIL_ROUTE);
+        }}
         onOpenPipeline={(pipelineKey) => {
-          setSelectedConnectionKey("");
           setSelectedPipelineKey(pipelineKey);
           navigate("/pipelines");
         }}
