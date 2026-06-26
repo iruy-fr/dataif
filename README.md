@@ -40,6 +40,30 @@ Plataforma conteinerizada para ingestão de dados governamentais em PostgreSQL, 
 Versao padrao do Metabase:
 - `METABASE_IMAGE_TAG=v0.60.1`
 
+## Instalador npm
+
+Tambem existe uma CLI npm para preparar uma maquina nova sem exigir que o usuario conheca os scripts internos:
+
+```bash
+npx @dataif/cli install
+npx @dataif/cli deploy
+```
+
+O instalador cria uma copia local da stack em `~/.dataif/current`, valida Docker/Docker Compose, coleta as credenciais de forma interativa e entao sobe os containers. Para usar uma pasta especifica:
+
+```bash
+npx @dataif/cli install --dir ./dataif-local
+npx @dataif/cli deploy --dir ./dataif-local --mode prod
+```
+
+Durante o desenvolvimento do pacote:
+
+```bash
+cd packages/dataif-cli
+npm run smoke
+npm pack --dry-run
+```
+
 ## Guia de uso local
 
 Pre-requisitos:

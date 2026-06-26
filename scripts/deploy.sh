@@ -20,6 +20,7 @@ Opcoes:
 
 Variaveis:
   DATAIF_FORCE_ENV=true  Recria infra/.env a partir do template do modo.
+  DATAIF_DEPLOY_CONFIG_ONLY=true  Configura e valida sem subir containers.
 USAGE
 }
 
@@ -66,6 +67,12 @@ else
 fi
 
 docker compose "${compose_args[@]}" config >/dev/null
+
+if [ "${DATAIF_DEPLOY_CONFIG_ONLY:-false}" = "true" ]; then
+  printf 'Configuracao validada: %s\n' "${ENV_FILE}"
+  exit 0
+fi
+
 docker compose "${compose_args[@]}" up -d --build
 
 printf 'DataIF %s ativo.\n' "${mode}"

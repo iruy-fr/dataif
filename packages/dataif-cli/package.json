@@ -1,0 +1,26 @@
+{
+  "name": "@dataif/cli",
+  "version": "0.1.0",
+  "description": "CLI para instalar e subir o DataIF localmente com Docker Compose.",
+  "type": "module",
+  "bin": {
+    "dataif": "bin/dataif.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "templates",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "node scripts/build-template.mjs",
+    "smoke": "node bin/dataif.js --help && node bin/dataif.js install --help && node bin/dataif.js deploy --help && node bin/dataif.js status --help"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "public"
+  }
+}
