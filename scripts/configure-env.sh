@@ -36,6 +36,20 @@ random_secret() {
   fi
 }
 
+urlencode() {
+  local value="$1"
+  local length="${#value}"
+  local index char
+
+  for ((index = 0; index < length; index += 1)); do
+    char="${value:index:1}"
+    case "${char}" in
+      [a-zA-Z0-9.~_-]) printf '%s' "${char}" ;;
+      *) printf '%%%02X' "'${char}" ;;
+    esac
+  done
+}
+
 read_value() {
   local label="$1"
   local default_value="$2"
@@ -57,6 +71,34 @@ read_secret() {
   fi
   printf '\n' >&2
   printf '%s' "${value:-${default_value}}"
+}
+
+validate_metabase_password() {
+  local password="$1"
+  local normalized
+
+  normalized="$(printf '%s' "${password}" | tr '[:upper:]' '[:lower:]')"
+  if [ "${#password}" -lt 8 ]; then
+    return 1
+  fi
+  case "${normalized}" in
+    admin|admin123|dataif|dataif123|password|password123|senha|senha123|123456|12345678|metabase|metabase123)
+      return 1
+      ;;
+  esac
+}
+
+read_metabase_admin_password() {
+  local password
+
+  while true; do
+    password="$(read_secret "Senha admin Metabase" "$(random_secret)")"
+    if validate_metabase_password "${password}"; then
+      printf '%s' "${password}"
+      return
+    fi
+    printf 'Senha admin Metabase fraca. Use ao menos 8 caracteres e evite valores comuns como admin, dataif ou password.\n' >&2
+  done
 }
 
 set_env() {
@@ -82,6 +124,10 @@ set_env() {
   mv "${tmp_file}" "${env_file}"
 }
 
+prompt_section() {
+  printf '\n== %s ==\n' "$1"
+}
+
 printf 'Configurando DataIF .env\n'
 printf 'Template: %s\n' "${template_file}"
 printf 'Destino: %s\n\n' "${env_file}"
@@ -98,6 +144,7 @@ else
   cp "${template_file}" "${env_file}"
 fi
 
+prompt_section "URLs e portas"
 public_base_url="$(read_value "URL publica da aplicacao" "http://localhost:5173")"
 web_port="$(read_value "Porta Web" "5173")"
 api_port="$(read_value "Porta API" "8000")"
@@ -106,9 +153,17 @@ metabase_port="$(read_value "Porta Metabase host" "3000")"
 airflow_port="$(read_value "Porta Airflow host" "8088")"
 keycloak_port="$(read_value "Porta Keycloak host" "8081")"
 vanna_port="$(read_value "Porta Vanna host" "9000")"
+
+prompt_section "Imagens"
 image_registry="$(read_value "Registry imagens" "docker.io/dataif")"
 image_tag="$(read_value "Tag imagens" "latest")"
-admin_email="$(read_value "Email admin" "admin@dataif.local")"
+
+prompt_section "Usuarios administrativos"
+admin_email="$(read_value "Email admin Metabase/Airflow" "admin@dataif.local")"
+airflow_admin_user="$(read_value "Usuario admin Airflow" "admin")"
+keycloak_admin_user="$(read_value "Usuario admin Keycloak" "admin")"
+
+prompt_section "LLM"
 llm_provider="$(read_value "Provider Vanna (ollama/maritaca)" "ollama")"
 maritaca_key=""
 
@@ -128,20 +183,37 @@ set_env KEYCLOAK_PORT "${keycloak_port}"
 set_env VANNA_PORT "${vanna_port}"
 set_env METABASE_SITE_URL "${public_base_url%/}/metabase"
 set_env METABASE_ADMIN_EMAIL "${admin_email}"
+set_env AIRFLOW_ADMIN_USER "${airflow_admin_user}"
 set_env AIRFLOW_ADMIN_EMAIL "${admin_email}"
+set_env KEYCLOAK_ADMIN "${keycloak_admin_user}"
 set_env VANNA_LLM_PROVIDER "${llm_provider}"
 set_env VANNA_MARITACA_API_KEY "${maritaca_key}"
 
-set_env POSTGRES_SUPERUSER_PASSWORD "$(read_secret "Senha Postgres superuser" "$(random_secret)")"
-set_env DATAIF_ETL_PASSWORD "$(read_secret "Senha usuario ETL" "$(random_secret)")"
-set_env DATAIF_METABASE_PASSWORD "$(read_secret "Senha usuario Metabase" "$(random_secret)")"
-set_env DATAIF_VANNA_PASSWORD "$(read_secret "Senha usuario Vanna" "$(random_secret)")"
-set_env AIRFLOW_DB_PASSWORD "$(read_secret "Senha banco Airflow" "$(random_secret)")"
-set_env METABASE_APP_DB_PASSWORD "$(read_secret "Senha banco Metabase" "$(random_secret)")"
-set_env AIRFLOW_ADMIN_PASSWORD "$(read_secret "Senha admin Airflow" "$(random_secret)")"
-set_env METABASE_ADMIN_PASSWORD "$(read_secret "Senha admin Metabase" "$(random_secret)")"
-set_env KEYCLOAK_ADMIN_PASSWORD "$(read_secret "Senha admin Keycloak" "$(random_secret)")"
-set_env METABASE_EMBED_SECRET "$(read_secret "Segredo embed Metabase" "$(random_secret)")"
+prompt_section "Senhas"
+postgres_superuser_password="$(read_secret "Senha Postgres superuser" "$(random_secret)")"
+dataif_etl_password="$(read_secret "Senha usuario ETL" "$(random_secret)")"
+dataif_metabase_password="$(read_secret "Senha usuario Metabase" "$(random_secret)")"
+dataif_vanna_password="$(read_secret "Senha usuario Vanna" "$(random_secret)")"
+airflow_db_password="$(read_secret "Senha banco Airflow" "$(random_secret)")"
+metabase_app_db_password="$(read_secret "Senha banco Metabase" "$(random_secret)")"
+airflow_admin_password="$(read_secret "Senha admin Airflow" "$(random_secret)")"
+metabase_admin_password="$(read_metabase_admin_password)"
+keycloak_admin_password="$(read_secret "Senha admin Keycloak" "$(random_secret)")"
+metabase_embed_secret="$(read_secret "Segredo embed Metabase" "$(random_secret)")"
+
+set_env POSTGRES_SUPERUSER_PASSWORD "${postgres_superuser_password}"
+set_env DATAIF_ETL_PASSWORD "${dataif_etl_password}"
+set_env DATAIF_ETL_PASSWORD_URLENC "$(urlencode "${dataif_etl_password}")"
+set_env DATAIF_METABASE_PASSWORD "${dataif_metabase_password}"
+set_env DATAIF_VANNA_PASSWORD "${dataif_vanna_password}"
+set_env DATAIF_VANNA_PASSWORD_URLENC "$(urlencode "${dataif_vanna_password}")"
+set_env AIRFLOW_DB_PASSWORD "${airflow_db_password}"
+set_env AIRFLOW_DB_PASSWORD_URLENC "$(urlencode "${airflow_db_password}")"
+set_env METABASE_APP_DB_PASSWORD "${metabase_app_db_password}"
+set_env AIRFLOW_ADMIN_PASSWORD "${airflow_admin_password}"
+set_env METABASE_ADMIN_PASSWORD "${metabase_admin_password}"
+set_env KEYCLOAK_ADMIN_PASSWORD "${keycloak_admin_password}"
+set_env METABASE_EMBED_SECRET "${metabase_embed_secret}"
 
 chmod 600 "${env_file}"
 

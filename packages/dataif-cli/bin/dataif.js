@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -63,6 +65,9 @@ async function main() {
     case "status":
       statusCommand(commandArgs);
       break;
+    case "doctor":
+      await doctorCommand(commandArgs);
+      break;
     default:
       fail(`Comando desconhecido: ${command}\n\nExecute: dataif --help`);
   }
@@ -73,13 +78,15 @@ function printMainHelp() {
 
 Uso:
   dataif install [--dir <path>] [--source <path>] [--force]
-  dataif deploy [--mode stg|prod] [--llm] [--dir <path>] [--yes]
+  dataif deploy [--mode stg|prod] [--llm] [--dir <path>] [--yes] [--reset-volumes]
   dataif status [--dir <path>]
+  dataif doctor [--dir <path>]
 
 Comandos:
   install  Prepara uma instalacao local da stack DataIF.
   deploy   Configura credenciais/portas e sobe a stack com Docker Compose.
   status   Mostra containers e URLs da instalacao.
+  doctor   Valida Docker, Compose, endpoints e servicos de bootstrap.
 
 Padrao:
   Diretorio de instalacao: ${defaultInstallDir}
@@ -102,7 +109,7 @@ Opcoes:
 }
 
 function printDeployHelp() {
-  console.log(`Uso: dataif deploy [--mode stg|prod] [--llm] [--dir <path>] [--yes]
+  console.log(`Uso: dataif deploy [--mode stg|prod] [--llm] [--dir <path>] [--yes] [--reset-volumes]
 
 Opcoes:
   --mode <mode>    stg ou prod. Se omitido, a CLI pergunta.
@@ -110,11 +117,23 @@ Opcoes:
   --dir <path>     Pasta da instalacao. Padrao: ${defaultInstallDir}
   --yes            Nao pergunta confirmacao antes de subir containers.
   --force-env      Recria infra/.env a partir do template do modo.
+  --reset-volumes  Executa docker compose down -v antes de subir a stack.
+
+Variaveis:
+  DATAIF_DEPLOY_CONFIG_ONLY=true  Configura e valida sem subir containers.
 `);
 }
 
 function printStatusHelp() {
   console.log(`Uso: dataif status [--dir <path>]
+
+Opcoes:
+  --dir <path>  Pasta da instalacao. Padrao: ${defaultInstallDir}
+`);
+}
+
+function printDoctorHelp() {
+  console.log(`Uso: dataif doctor [--dir <path>]
 
 Opcoes:
   --dir <path>  Pasta da instalacao. Padrao: ${defaultInstallDir}
@@ -140,7 +159,7 @@ async function installCommand(args) {
 }
 
 async function deployCommand(args) {
-  const options = parseOptions(args, { booleans: ["llm", "yes", "force-env"] });
+  const options = parseOptions(args, { booleans: ["llm", "yes", "force-env", "reset-volumes"] });
   if (options.help) {
     printDeployHelp();
     return;
@@ -158,6 +177,11 @@ async function deployCommand(args) {
   validateHostCapacity();
 
   const projectDir = await resolveProjectDir(options.dir);
+  const envPath = path.join(projectDir, "infra", ".env");
+  if ((options["force-env"] || options["reset-volumes"]) && fs.existsSync(envPath)) {
+    snapshotEnvFile(envPath);
+  }
+
   const env = {
     ...process.env,
     DATAIF_DEPLOY_CONFIG_ONLY: "true"
@@ -173,11 +197,23 @@ async function deployCommand(args) {
     stdio: "inherit"
   });
 
-  const envPath = path.join(projectDir, "infra", ".env");
   const envValues = readEnvFile(envPath);
-  await validatePorts(envValues, Boolean(options.yes));
+  const configOnly = process.env.DATAIF_DEPLOY_CONFIG_ONLY === "true";
+  if (!configOnly) {
+    await validatePorts(envValues, Boolean(options.yes));
+  }
+
+  const composeArgs = buildComposeArgs(projectDir, envPath, Boolean(options.llm));
 
   printDeploySummary(projectDir, mode, Boolean(options.llm), envValues);
+  if (options["reset-volumes"] && !options.yes) {
+    const resetConfirmed = await confirm("Remover containers e volumes antes de subir? Isso apaga dados locais da stack", false);
+    if (!resetConfirmed) {
+      console.log("Deploy cancelado antes do reset de volumes.");
+      return;
+    }
+  }
+
   if (!options.yes) {
     const confirmed = await confirm("Subir containers agora?", true);
     if (!confirmed) {
@@ -187,19 +223,21 @@ async function deployCommand(args) {
     }
   }
 
-  const composeArgs = [
-    "compose",
-    "--env-file",
-    envPath,
-    "-f",
-    path.join(projectDir, "infra", "docker-compose.yml")
-  ];
-  if (options.llm) {
-    composeArgs.push("--profile", "llm");
+  console.log("\nValidando Docker Compose...");
+  run("docker", [...composeArgs, "config"], { cwd: path.join(projectDir, "infra") });
+
+  if (configOnly) {
+    console.log(`Configuracao validada: ${envPath}`);
+    return;
   }
 
-  console.log("\nValidando Docker Compose...");
-  run("docker", [...composeArgs, "config"], { cwd: path.join(projectDir, "infra"), stdio: "inherit" });
+  if (options["reset-volumes"]) {
+    console.log("\nRemovendo containers e volumes da stack DataIF...");
+    run("docker", [...composeArgs, "down", "-v"], {
+      cwd: path.join(projectDir, "infra"),
+      stdio: "inherit"
+    });
+  }
 
   console.log("\nSubindo stack DataIF...");
   run("docker", [...composeArgs, "up", "-d", "--build"], {
@@ -260,6 +298,53 @@ function statusCommand(args) {
     fail(`Nao consegui consultar Docker Compose.\n${detail}`.trim());
   }
   process.stdout.write(docker.stdout);
+}
+
+
+async function doctorCommand(args) {
+  const options = parseOptions(args);
+  if (options.help) {
+    printDoctorHelp();
+    return;
+  }
+
+  const projectDir = resolveExistingProjectDir(options.dir);
+  const envPath = path.join(projectDir, "infra", ".env");
+  if (!fs.existsSync(envPath)) {
+    fail(`Nao encontrei ${envPath}.\nExecute: dataif deploy --dir ${quotePath(projectDir)}`);
+  }
+
+  const envValues = readEnvFile(envPath);
+  const composeArgs = buildComposeArgs(projectDir, envPath, false);
+
+  console.log(`DataIF doctor: ${projectDir}`);
+  printCheck("Docker client", checkCommand("docker", ["--version"]));
+  printCheck("Docker Compose v2", checkCommand("docker", ["compose", "version"]));
+  printCheck("Docker daemon", checkCommand("docker", ["info"]));
+  validateHostCapacity();
+
+  console.log("\nContainers");
+  const ps = spawnSync("docker", [...composeArgs, "ps"], {
+    cwd: path.join(projectDir, "infra"),
+    encoding: "utf8"
+  });
+  if (ps.status === 0) {
+    process.stdout.write(ps.stdout || "Nenhum container retornado.\n");
+  } else {
+    printCheck("docker compose ps", { ok: false, detail: ps.stderr || ps.error?.message || "falha desconhecida" });
+  }
+
+  console.log("\nEndpoints");
+  const webPort = envValues.WEB_PORT || "5173";
+  await printEndpointCheck("API live", `http://localhost:${webPort}/api/health/live`);
+  await printEndpointCheck("API ready", `http://localhost:${webPort}/api/health/ready`);
+  await printEndpointCheck("Metabase", `http://localhost:${webPort}/metabase/`);
+  await printEndpointCheck("Airflow", `http://localhost:${webPort}/airflow/`);
+
+  console.log("\nBootstrap services");
+  for (const service of ["airflow-init", "metabase-bootstrap"]) {
+    reportBootstrapService(composeArgs, projectDir, service);
+  }
 }
 
 function parseOptions(args, config = {}) {
@@ -547,6 +632,102 @@ function buildDeployArgs(mode, includeLlm) {
     args.push("--llm");
   }
   return args;
+}
+
+function buildComposeArgs(projectDir, envPath, includeLlm) {
+  const args = [
+    "compose",
+    "--env-file",
+    envPath,
+    "-f",
+    path.join(projectDir, "infra", "docker-compose.yml")
+  ];
+  if (includeLlm) {
+    args.push("--profile", "llm");
+  }
+  return args;
+}
+
+function snapshotEnvFile(envPath) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const snapshotPath = `${envPath}.${timestamp}.bak`;
+  fs.copyFileSync(envPath, snapshotPath);
+  fs.chmodSync(snapshotPath, 0o600);
+  console.log(`Snapshot do .env criado: ${snapshotPath}`);
+}
+
+function checkCommand(command, args) {
+  const result = spawnSync(command, args, { encoding: "utf8" });
+  if (result.error || result.status !== 0) {
+    return { ok: false, detail: result.stderr || result.error?.message || "falha desconhecida" };
+  }
+  return { ok: true, detail: (result.stdout || "ok").trim().split("\n")[0] };
+}
+
+function printCheck(label, result) {
+  const status = result.ok ? "ok" : "falhou";
+  const detail = result.detail ? ` - ${result.detail.trim()}` : "";
+  console.log(`${label}: ${status}${detail}`);
+}
+
+async function printEndpointCheck(label, url) {
+  const result = await checkHttp(url);
+  printCheck(`${label} ${url}`, result);
+}
+
+function checkHttp(url) {
+  return new Promise((resolve) => {
+    const client = url.startsWith("https:") ? https : http;
+    const request = client.get(url, { timeout: 5000 }, (response) => {
+      response.resume();
+      const ok = response.statusCode >= 200 && response.statusCode < 400;
+      resolve({ ok, detail: `HTTP ${response.statusCode}` });
+    });
+    request.on("timeout", () => {
+      request.destroy();
+      resolve({ ok: false, detail: "timeout" });
+    });
+    request.on("error", (error) => resolve({ ok: false, detail: error.message }));
+  });
+}
+
+function reportBootstrapService(composeArgs, projectDir, service) {
+  const ps = spawnSync("docker", [...composeArgs, "ps", "--all", "--format", "json", service], {
+    cwd: path.join(projectDir, "infra"),
+    encoding: "utf8"
+  });
+  if (ps.status !== 0) {
+    printCheck(service, { ok: false, detail: ps.stderr || ps.error?.message || "falha ao consultar" });
+    return;
+  }
+
+  const records = ps.stdout.trim().split(/\r?\n/).filter(Boolean).map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+  const record = records[0];
+  if (!record) {
+    printCheck(service, { ok: false, detail: "servico nao encontrado" });
+    return;
+  }
+
+  const state = record.State || record.Status || "desconhecido";
+  const exitCode = record.ExitCode;
+  const ok = state === "exited" && (exitCode === 0 || exitCode === "0" || exitCode === undefined);
+  printCheck(service, { ok, detail: `${state}${exitCode !== undefined ? ` exit=${exitCode}` : ""}` });
+  if (!ok) {
+    const logs = spawnSync("docker", [...composeArgs, "logs", "--tail", "80", service], {
+      cwd: path.join(projectDir, "infra"),
+      encoding: "utf8"
+    });
+    if (logs.stdout || logs.stderr) {
+      console.log(`Ultimos logs de ${service}:`);
+      process.stdout.write(logs.stdout || logs.stderr);
+    }
+  }
 }
 
 function readEnvFile(envPath) {

@@ -47,14 +47,24 @@ Tambem existe uma CLI npm para preparar uma maquina nova sem exigir que o usuari
 ```bash
 npx @dataif/cli install
 npx @dataif/cli deploy
+npx @dataif/cli doctor
 ```
 
-O instalador cria uma copia local da stack em `~/.dataif/current`, valida Docker/Docker Compose, coleta as credenciais de forma interativa e entao sobe os containers. Para usar uma pasta especifica:
+O instalador cria uma copia local da stack em `~/.dataif/current`, valida Docker/Docker Compose, coleta as credenciais de forma interativa e entao sobe os containers. O comando `doctor` valida Docker, Compose, endpoints da aplicacao e logs dos servicos de bootstrap. Para usar uma pasta especifica:
 
 ```bash
 npx @dataif/cli install --dir ./dataif-local
 npx @dataif/cli deploy --dir ./dataif-local --mode prod
+npx @dataif/cli doctor --dir ./dataif-local
 ```
+
+Para recuperar um deploy local inicializado com credenciais erradas, recrie os volumes explicitamente:
+
+```bash
+npx @dataif/cli deploy --dir ./dataif-local --mode prod --force-env --reset-volumes
+```
+
+`--reset-volumes` executa `docker compose down -v` e apaga dados locais da stack antes de subir novamente.
 
 Durante o desenvolvimento do pacote:
 
@@ -70,6 +80,18 @@ Pre-requisitos:
 - Docker Engine com Docker Compose v2
 - 6 GB de RAM livres para stack basica
 - 12 GB de RAM livres se usar Ollama local
+
+Em VM Linux limpa, instale Docker manualmente antes do deploy. Em Oracle Linux/RHEL compativel:
+
+```bash
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+```
+
+Saia e entre novamente na sessao para o grupo `docker` ser aplicado. Para VirtualBox NAT e port forwarding, veja `docs/VM_INSTALL.md`.
 
 Subir ambiente de teste/staging:
 

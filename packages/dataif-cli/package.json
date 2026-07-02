@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "prepack": "node scripts/build-template.mjs",
-    "smoke": "node bin/dataif.js --help && node bin/dataif.js install --help && node bin/dataif.js deploy --help && node bin/dataif.js status --help"
+    "smoke": "node bin/dataif.js --help && node bin/dataif.js install --help && node bin/dataif.js deploy --help && node bin/dataif.js status --help && node bin/dataif.js doctor --help"
   },
   "engines": {
     "node": ">=18"
