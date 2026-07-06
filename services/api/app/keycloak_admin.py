@@ -106,6 +106,78 @@ class KeycloakAdminClient:
             "email_verified": bool(user.get("emailVerified", False)),
         }
 
+    def upsert_admin_user(
+        self,
+        *,
+        username: str,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        enabled: bool = True,
+    ) -> dict[str, Any]:
+        user = self._lookup_user_by_username(username)
+        if not user:
+            return self.create_admin_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                enabled=enabled,
+            )
+
+        user_id = str(user["id"])
+        self._request(
+            "PUT",
+            f"/admin/realms/{quote(self.realm, safe='')}/users/{quote(user_id, safe='')}",
+            json={
+                "username": username,
+                "email": email,
+                "firstName": first_name,
+                "lastName": last_name,
+                "enabled": enabled,
+                "emailVerified": bool(user.get("emailVerified", False)),
+            },
+            expected_status={204},
+        )
+        if password:
+            self._request(
+                "PUT",
+                f"/admin/realms/{quote(self.realm, safe='')}/users/{quote(user_id, safe='')}/reset-password",
+                json={"type": "password", "temporary": False, "value": password},
+                expected_status={204},
+            )
+        self.ensure_realm_role(user_id=user_id, role_name="admin")
+        refreshed = self._lookup_user_by_username(username) or user
+        return {
+            "id": user_id,
+            "username": refreshed.get("username") or username,
+            "email": refreshed.get("email") or email,
+            "first_name": refreshed.get("firstName") or first_name,
+            "last_name": refreshed.get("lastName") or last_name,
+            "enabled": bool(refreshed.get("enabled", enabled)),
+            "email_verified": bool(refreshed.get("emailVerified", False)),
+        }
+
+    def ensure_realm_role(self, *, user_id: str, role_name: str) -> None:
+        role = self._realm_role(role_name)
+        existing_roles = self._request(
+            "GET",
+            f"/admin/realms/{quote(self.realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/realm",
+            expected_status={200},
+        )
+        if isinstance(existing_roles, list):
+            for item in existing_roles:
+                if isinstance(item, dict) and item.get("name") == role_name:
+                    return
+        self._request(
+            "POST",
+            f"/admin/realms/{quote(self.realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/realm",
+            json=[role],
+            expected_status={204},
+        )
+
     def delete_user(self, user_id: str) -> None:
         self._request(
             "DELETE",

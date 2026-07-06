@@ -41,11 +41,17 @@ class Settings(BaseSettings):
     keycloak_admin_client_id: str = Field(default="admin-cli", alias="KEYCLOAK_ADMIN_CLIENT_ID")
     keycloak_admin_username: str = Field(default="admin", alias="KEYCLOAK_ADMIN")
     keycloak_admin_password: str = Field(default="admin", alias="KEYCLOAK_ADMIN_PASSWORD")
+    dataif_admin_username: str = Field(default="admin", alias="DATAIF_ADMIN_USERNAME")
+    dataif_admin_email: str = Field(default="admin@dataif.local", alias="DATAIF_ADMIN_EMAIL")
+    dataif_admin_password: str = Field(default="admin", alias="DATAIF_ADMIN_PASSWORD")
+    dataif_admin_first_name: str = Field(default="DataIF", alias="DATAIF_ADMIN_FIRST_NAME")
+    dataif_admin_last_name: str = Field(default="Admin", alias="DATAIF_ADMIN_LAST_NAME")
 
     warehouse_dsn: str = Field(default="", alias="WAREHOUSE_DSN")
     airflow_api_url: str = Field(default="http://airflow-webserver:8080/airflow", alias="AIRFLOW_API_URL")
     airflow_admin_user: str = Field(default="admin", alias="AIRFLOW_ADMIN_USER")
     airflow_admin_password: str = Field(default="admin", alias="AIRFLOW_ADMIN_PASSWORD")
+    airflow_dag_registration_timeout_seconds: int = Field(default=240, alias="AIRFLOW_DAG_REGISTRATION_TIMEOUT_SECONDS")
 
     cors_allow_origins: str = Field(default="http://localhost:5173", alias="CORS_ALLOW_ORIGINS")
     nilo_timeout_seconds: int = Field(default=60, alias="NILO_TIMEOUT_SECONDS")

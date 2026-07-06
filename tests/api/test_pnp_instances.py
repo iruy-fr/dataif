@@ -573,6 +573,50 @@ def test_trigger_pnp_instance_operations_proxy_airflow(monkeypatch) -> None:
     ]
 
 
+def test_wait_for_airflow_dag_returns_structured_diagnostics_on_timeout(monkeypatch, tmp_path) -> None:
+    dag_file = tmp_path / "pnp_pipeline.py"
+    dag_file.write_text("dag = object()\n", encoding="utf-8")
+
+    class FakeResponse:
+        status_code = 404
+        text = "{}"
+
+        def json(self) -> dict[str, object]:
+            return {}
+
+    class FakeClient:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def get(self, _url: str) -> FakeResponse:
+            return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "Client", FakeClient)
+    monkeypatch.setattr(main, "_airflow_request", lambda *_args, **_kwargs: {"dags": []})
+
+    try:
+        main._wait_for_airflow_dag(
+            "pnp_pipeline",
+            timeout_seconds=0.002,
+            poll_interval_seconds=0.001,
+            diagnostic_context={"dag_file": str(dag_file), "instance_key": "pnp_ifb"},
+        )
+    except main.HTTPException as exc:
+        assert exc.status_code == 502
+        assert exc.detail["dag_id"] == "pnp_pipeline"
+        assert exc.detail["timeout_seconds"] == 0.002
+        assert exc.detail["diagnostics"]["dag_file_exists"] is True
+        assert exc.detail["diagnostics"]["airflow_dag_visible"] is False
+    else:
+        raise AssertionError("Expected timeout waiting for Airflow DAG")
+
+
 def test_update_pnp_instance_settings(monkeypatch) -> None:
     monkeypatch.setattr(
         main,

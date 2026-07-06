@@ -11,6 +11,7 @@ if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
 
 from app import main
+from app.keycloak_admin import KeycloakAdminClient
 
 
 class FakeCursor:
@@ -179,3 +180,45 @@ def test_sync_admin_user_metabase_creates_missing_user(monkeypatch) -> None:
     assert body["user"]["metabase_synced"] is True
     assert metabase.created[0]["email"] == "ana@example.test"
     assert metabase.created[0]["password"] == "metabase-secret"
+
+
+def test_keycloak_upsert_admin_user_updates_existing_user_and_assigns_admin_role(monkeypatch) -> None:
+    client = KeycloakAdminClient(
+        base_url="http://keycloak:8080",
+        realm="dataif",
+        admin_realm="master",
+        admin_client_id="admin-cli",
+        admin_username="root",
+        admin_password="secret",
+        timeout_seconds=30,
+    )
+    lookups = [
+        {"id": "user-1", "username": "dataif", "email": "old@example.test", "enabled": True},
+        {"id": "user-1", "username": "dataif", "email": "dataif@dataif.com", "enabled": True},
+    ]
+    requests: list[tuple[str, str, object | None]] = []
+
+    monkeypatch.setattr(client, "_lookup_user_by_username", lambda _username: lookups.pop(0))
+    monkeypatch.setattr(client, "_realm_role", lambda role_name: {"id": "role-1", "name": role_name})
+
+    def fake_request(method: str, path: str, **kwargs: object) -> object:
+        requests.append((method, path, kwargs.get("json")))
+        if path.endswith("/role-mappings/realm") and method == "GET":
+            return []
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    user = client.upsert_admin_user(
+        username="dataif",
+        email="dataif@dataif.com",
+        password="StrongPass123",
+        first_name="DataIF",
+        last_name="Admin",
+    )
+
+    assert user["id"] == "user-1"
+    assert user["email"] == "dataif@dataif.com"
+    assert any(item[0] == "PUT" and item[1].endswith("/users/user-1") for item in requests)
+    assert any(item[0] == "PUT" and item[1].endswith("/reset-password") for item in requests)
+    assert any(item[0] == "POST" and item[1].endswith("/role-mappings/realm") for item in requests)

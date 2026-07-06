@@ -6,8 +6,6 @@ import https from "node:https";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import readline from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +20,7 @@ const requiredProjectFiles = [
 ];
 
 const installEntries = [
+  "docs",
   "infra",
   "pipelines",
   "scripts",
@@ -46,6 +45,8 @@ main().catch((error) => {
 });
 
 async function main() {
+  validateNodeRuntime();
+
   const args = process.argv.slice(2);
   const command = args[0];
 
@@ -173,10 +174,9 @@ async function deployCommand(args) {
     fail(`Modo invalido: ${mode}. Use stg ou prod.`);
   }
 
-  await validateDocker();
-  validateHostCapacity();
-
   const projectDir = await resolveProjectDir(options.dir);
+  await validateDocker();
+  validateHostCapacity(projectDir);
   const envPath = path.join(projectDir, "infra", ".env");
   if ((options["force-env"] || options["reset-volumes"]) && fs.existsSync(envPath)) {
     snapshotEnvFile(envPath);
@@ -246,7 +246,7 @@ async function deployCommand(args) {
   });
 
   console.log("\nDataIF ativo.");
-  console.log(`Web: http://localhost:${envValues.WEB_PORT || "5173"}`);
+  console.log(`Web: ${publicBaseUrl(envValues)}`);
   console.log(`Status: dataif status --dir ${quotePath(projectDir)}`);
 }
 
@@ -266,12 +266,13 @@ function statusCommand(args) {
   }
 
   const envValues = readEnvFile(envPath);
+  const baseUrl = publicBaseUrl(envValues);
   console.log(`DataIF: ${projectDir}`);
   console.log(`Env: ${envPath}`);
-  console.log(`Web: http://localhost:${envValues.WEB_PORT || "5173"}`);
+  console.log(`Web: ${baseUrl}`);
   console.log(`API: http://localhost:${envValues.API_PORT || "8000"}`);
-  console.log(`Airflow: http://localhost:${envValues.WEB_PORT || "5173"}/airflow/`);
-  console.log(`Metabase: http://localhost:${envValues.WEB_PORT || "5173"}/metabase/`);
+  console.log(`Airflow: ${baseUrl}/airflow/`);
+  console.log(`Metabase: ${baseUrl}/metabase/`);
   console.log("");
 
   const docker = spawnSync("docker", [
@@ -316,12 +317,13 @@ async function doctorCommand(args) {
 
   const envValues = readEnvFile(envPath);
   const composeArgs = buildComposeArgs(projectDir, envPath, false);
+  const baseUrl = publicBaseUrl(envValues);
 
   console.log(`DataIF doctor: ${projectDir}`);
   printCheck("Docker client", checkCommand("docker", ["--version"]));
   printCheck("Docker Compose v2", checkCommand("docker", ["compose", "version"]));
   printCheck("Docker daemon", checkCommand("docker", ["info"]));
-  validateHostCapacity();
+  validateHostCapacity(projectDir);
 
   console.log("\nContainers");
   const ps = spawnSync("docker", [...composeArgs, "ps"], {
@@ -340,11 +342,22 @@ async function doctorCommand(args) {
   await printEndpointCheck("API ready", `http://localhost:${webPort}/api/health/ready`);
   await printEndpointCheck("Metabase", `http://localhost:${webPort}/metabase/`);
   await printEndpointCheck("Airflow", `http://localhost:${webPort}/airflow/`);
+  if (!baseUrl.includes("localhost")) {
+    await printEndpointCheck("Public web", baseUrl);
+  }
 
   console.log("\nBootstrap services");
-  for (const service of ["airflow-init", "metabase-bootstrap"]) {
+  for (const service of ["airflow-init", "keycloak-bootstrap", "metabase-bootstrap"]) {
     reportBootstrapService(composeArgs, projectDir, service);
   }
+
+  console.log("\nRuntime services");
+  for (const service of ["web", "api", "keycloak", "airflow-webserver", "airflow-scheduler"]) {
+    reportRunningService(composeArgs, projectDir, service);
+  }
+
+  console.log("\nFirewall");
+  reportFirewall(envValues);
 }
 
 function parseOptions(args, config = {}) {
@@ -379,7 +392,9 @@ function parseOptions(args, config = {}) {
 }
 
 async function chooseMode() {
-  const rl = readline.createInterface({ input, output });
+  const { createInterface } = await import("node:readline/promises");
+  const { stdin: input, stdout: output } = await import("node:process");
+  const rl = createInterface({ input, output });
   try {
     while (true) {
       const answer = (await rl.question("Modo de deploy (stg/prod) [prod]: ")).trim() || "prod";
@@ -395,7 +410,9 @@ async function chooseMode() {
 
 async function confirm(question, defaultValue) {
   const suffix = defaultValue ? "[S/n]" : "[s/N]";
-  const rl = readline.createInterface({ input, output });
+  const { createInterface } = await import("node:readline/promises");
+  const { stdin: input, stdout: output } = await import("node:process");
+  const rl = createInterface({ input, output });
   try {
     const answer = (await rl.question(`${question} ${suffix}: `)).trim().toLowerCase();
     if (!answer) {
@@ -542,6 +559,16 @@ function shouldCopy(src) {
   return true;
 }
 
+function validateNodeRuntime() {
+  const [major] = process.versions.node.split(".").map((part) => Number(part));
+  if (!Number.isInteger(major) || major < 18) {
+    fail([
+      `Node.js ${process.versions.node} detectado, mas o DataIF CLI precisa de Node.js >= 18.`,
+      "Instale Node.js 20 e execute novamente. Em Oracle Linux, use NodeSource ou outro repositório oficial equivalente."
+    ].join("\n"));
+  }
+}
+
 async function validateDocker() {
   const docker = spawnSync("docker", ["--version"], { encoding: "utf8" });
   if (docker.error || docker.status !== 0) {
@@ -559,22 +586,51 @@ async function validateDocker() {
   }
 }
 
-function validateHostCapacity() {
+function validateHostCapacity(projectDir = os.homedir()) {
   const totalMemGb = os.totalmem() / 1024 / 1024 / 1024;
   if (totalMemGb < 6) {
     console.warn(`Aviso: memoria total detectada abaixo de 6 GB (${totalMemGb.toFixed(1)} GB).`);
   }
 
-  const available = spawnSync("df", ["-Pk", os.homedir()], { encoding: "utf8" });
+  reportDiskCapacity(projectDir, "instalacao DataIF", 20);
+  const dockerRoot = detectDockerRootDir();
+  if (dockerRoot) {
+    reportDiskCapacity(dockerRoot, "Docker data-root", 30);
+  }
+}
+
+function reportDiskCapacity(targetPath, label, minimumGb) {
+  const existingPath = nearestExistingPath(targetPath);
+  const available = spawnSync("df", ["-Pk", existingPath], { encoding: "utf8" });
   if (available.status === 0) {
     const lines = available.stdout.trim().split("\n");
     const columns = lines.at(-1)?.trim().split(/\s+/) || [];
     const availableKb = Number(columns[3] || 0);
     const availableGb = availableKb / 1024 / 1024;
-    if (availableGb > 0 && availableGb < 10) {
-      console.warn(`Aviso: espaco livre abaixo de 10 GB em ${os.homedir()} (${availableGb.toFixed(1)} GB).`);
+    if (availableGb > 0 && availableGb < minimumGb) {
+      console.warn(`Aviso: espaco livre abaixo de ${minimumGb} GB em ${label} (${existingPath}: ${availableGb.toFixed(1)} GB).`);
     }
   }
+}
+
+function nearestExistingPath(targetPath) {
+  let current = path.resolve(targetPath || os.homedir());
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return "/";
+    }
+    current = parent;
+  }
+  return current;
+}
+
+function detectDockerRootDir() {
+  const result = spawnSync("docker", ["info", "--format", "{{.DockerRootDir}}"], { encoding: "utf8" });
+  if (result.status !== 0) {
+    return "";
+  }
+  return (result.stdout || "").trim();
 }
 
 async function validatePorts(envValues, assumeYes) {
@@ -752,15 +808,75 @@ function readEnvFile(envPath) {
 }
 
 function printDeploySummary(projectDir, mode, includeLlm, envValues) {
+  const baseUrl = publicBaseUrl(envValues);
   console.log("\nResumo do deploy");
   console.log(`- Pasta: ${projectDir}`);
   console.log(`- Modo: ${mode}`);
   console.log(`- Projeto Compose: ${envValues.COMPOSE_PROJECT_NAME || "dataif"}`);
-  console.log(`- Web: http://localhost:${envValues.WEB_PORT || "5173"}`);
+  console.log(`- Web: ${baseUrl}`);
   console.log(`- API: http://localhost:${envValues.API_PORT || "8000"}`);
-  console.log(`- Metabase: http://localhost:${envValues.WEB_PORT || "5173"}/metabase/`);
-  console.log(`- Airflow: http://localhost:${envValues.WEB_PORT || "5173"}/airflow/`);
+  console.log(`- Metabase: ${baseUrl}/metabase/`);
+  console.log(`- Airflow: ${baseUrl}/airflow/`);
   console.log(`- LLM local: ${includeLlm ? "sim" : "nao"}`);
+}
+
+function publicBaseUrl(envValues) {
+  return (envValues.DATAIF_PUBLIC_BASE_URL || `http://localhost:${envValues.WEB_PORT || "5173"}`).replace(/\/+$/, "");
+}
+
+function reportRunningService(composeArgs, projectDir, service) {
+  const ps = spawnSync("docker", [...composeArgs, "ps", "--format", "json", service], {
+    cwd: path.join(projectDir, "infra"),
+    encoding: "utf8"
+  });
+  if (ps.status !== 0) {
+    printCheck(service, { ok: false, detail: ps.stderr || ps.error?.message || "falha ao consultar" });
+    return;
+  }
+  const record = ps.stdout.trim().split(/\r?\n/).filter(Boolean).map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean)[0];
+  if (!record) {
+    printCheck(service, { ok: false, detail: "servico nao encontrado ou parado" });
+    return;
+  }
+  const state = record.State || record.Status || "desconhecido";
+  printCheck(service, { ok: state === "running", detail: state });
+}
+
+function reportFirewall(envValues) {
+  const firewall = spawnSync("firewall-cmd", ["--state"], { encoding: "utf8" });
+  if (firewall.error) {
+    printCheck("firewalld", { ok: true, detail: "firewall-cmd nao encontrado" });
+    return;
+  }
+  if (firewall.status !== 0) {
+    printCheck("firewalld", { ok: true, detail: "inativo" });
+    return;
+  }
+  const ports = [
+    envValues.WEB_PORT,
+    envValues.API_PORT,
+    envValues.METABASE_PORT,
+    envValues.AIRFLOW_PORT,
+    envValues.KEYCLOAK_PORT,
+    envValues.VANNA_PORT
+  ].filter(Boolean);
+  const open = spawnSync("firewall-cmd", ["--list-ports"], { encoding: "utf8" });
+  const openPorts = new Set((open.stdout || "").trim().split(/\s+/).filter(Boolean));
+  const missing = ports.filter((port) => !openPorts.has(`${port}/tcp`));
+  if (missing.length === 0) {
+    printCheck("firewalld portas", { ok: true, detail: "portas DataIF liberadas" });
+  } else {
+    printCheck("firewalld portas", {
+      ok: false,
+      detail: `faltando ${missing.map((port) => `${port}/tcp`).join(", ")}`
+    });
+  }
 }
 
 function run(command, args, options = {}) {

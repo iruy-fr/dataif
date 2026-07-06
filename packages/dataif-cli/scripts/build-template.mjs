@@ -9,6 +9,7 @@ const repoRoot = path.resolve(packageRoot, "..", "..");
 const templateRoot = path.join(packageRoot, "templates", "dataif");
 
 const entries = [
+  "docs",
   "infra",
   "pipelines",
   "scripts",

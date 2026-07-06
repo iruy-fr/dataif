@@ -88,6 +88,53 @@ validate_metabase_password() {
   esac
 }
 
+is_valid_email() {
+  local value="$1"
+  [[ "${value}" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]
+}
+
+read_email() {
+  local label="$1"
+  local default_value="$2"
+  local value
+
+  while true; do
+    value="$(read_value "${label}" "${default_value}")"
+    if is_valid_email "${value}"; then
+      printf '%s' "${value}"
+      return
+    fi
+    printf 'Email invalido: %s\n' "${value}" >&2
+  done
+}
+
+public_url_host() {
+  local url="${1#http://}"
+  url="${url#https://}"
+  url="${url%%/*}"
+  printf '%s' "${url%%:*}"
+}
+
+public_url_port() {
+  local raw="$1"
+  local scheme="http"
+  local url hostport
+
+  case "${raw}" in
+    https://*) scheme="https" ;;
+  esac
+  url="${raw#http://}"
+  url="${url#https://}"
+  hostport="${url%%/*}"
+  if [[ "${hostport}" == *:* ]]; then
+    printf '%s' "${hostport##*:}"
+  elif [ "${scheme}" = "https" ]; then
+    printf '443'
+  else
+    printf '80'
+  fi
+}
+
 read_metabase_admin_password() {
   local password
 
@@ -146,6 +193,9 @@ fi
 
 prompt_section "URLs e portas"
 public_base_url="$(read_value "URL publica da aplicacao" "http://localhost:5173")"
+public_base_url="${public_base_url%/}"
+public_host="$(public_url_host "${public_base_url}")"
+public_port="$(public_url_port "${public_base_url}")"
 web_port="$(read_value "Porta Web" "5173")"
 api_port="$(read_value "Porta API" "8000")"
 postgres_port="$(read_value "Porta Postgres host" "5433")"
@@ -159,7 +209,11 @@ image_registry="$(read_value "Registry imagens" "docker.io/dataif")"
 image_tag="$(read_value "Tag imagens" "latest")"
 
 prompt_section "Usuarios administrativos"
-admin_email="$(read_value "Email admin Metabase/Airflow" "admin@dataif.local")"
+admin_email="$(read_email "Email admin Metabase/Airflow" "admin@dataif.local")"
+dataif_admin_user="$(read_value "Usuario admin DataIF" "admin")"
+dataif_admin_email="$(read_email "Email admin DataIF" "${admin_email}")"
+dataif_admin_first_name="$(read_value "Nome admin DataIF" "DataIF")"
+dataif_admin_last_name="$(read_value "Sobrenome admin DataIF" "Admin")"
 airflow_admin_user="$(read_value "Usuario admin Airflow" "admin")"
 keycloak_admin_user="$(read_value "Usuario admin Keycloak" "admin")"
 
@@ -174,6 +228,9 @@ fi
 set_env COMPOSE_PROJECT_NAME "$(read_value "Nome projeto Compose" "dataif")"
 set_env DATAIF_IMAGE_REGISTRY "${image_registry}"
 set_env DATAIF_IMAGE_TAG "${image_tag}"
+set_env DATAIF_PUBLIC_BASE_URL "${public_base_url}"
+set_env DATAIF_PUBLIC_HOST "${public_host}"
+set_env DATAIF_PUBLIC_PORT "${public_port}"
 set_env WEB_PORT "${web_port}"
 set_env API_PORT "${api_port}"
 set_env POSTGRES_EXPOSE_PORT "${postgres_port}"
@@ -182,10 +239,18 @@ set_env AIRFLOW_PORT "${airflow_port}"
 set_env KEYCLOAK_PORT "${keycloak_port}"
 set_env VANNA_PORT "${vanna_port}"
 set_env METABASE_SITE_URL "${public_base_url%/}/metabase"
+set_env AIRFLOW_PUBLIC_URL "${public_base_url%/}/airflow"
+set_env AIRFLOW_API_URL "http://airflow-webserver:8080/airflow"
+set_env AIRFLOW_DAG_REGISTRATION_TIMEOUT_SECONDS "240"
+set_env CORS_ALLOW_ORIGINS "${public_base_url}"
 set_env METABASE_ADMIN_EMAIL "${admin_email}"
 set_env AIRFLOW_ADMIN_USER "${airflow_admin_user}"
 set_env AIRFLOW_ADMIN_EMAIL "${admin_email}"
 set_env KEYCLOAK_ADMIN "${keycloak_admin_user}"
+set_env DATAIF_ADMIN_USERNAME "${dataif_admin_user}"
+set_env DATAIF_ADMIN_EMAIL "${dataif_admin_email}"
+set_env DATAIF_ADMIN_FIRST_NAME "${dataif_admin_first_name}"
+set_env DATAIF_ADMIN_LAST_NAME "${dataif_admin_last_name}"
 set_env VANNA_LLM_PROVIDER "${llm_provider}"
 set_env VANNA_MARITACA_API_KEY "${maritaca_key}"
 
@@ -199,6 +264,7 @@ metabase_app_db_password="$(read_secret "Senha banco Metabase" "$(random_secret)
 airflow_admin_password="$(read_secret "Senha admin Airflow" "$(random_secret)")"
 metabase_admin_password="$(read_metabase_admin_password)"
 keycloak_admin_password="$(read_secret "Senha admin Keycloak" "$(random_secret)")"
+dataif_admin_password="$(read_secret "Senha admin DataIF" "${keycloak_admin_password}")"
 metabase_embed_secret="$(read_secret "Segredo embed Metabase" "$(random_secret)")"
 
 set_env POSTGRES_SUPERUSER_PASSWORD "${postgres_superuser_password}"
@@ -213,6 +279,7 @@ set_env METABASE_APP_DB_PASSWORD "${metabase_app_db_password}"
 set_env AIRFLOW_ADMIN_PASSWORD "${airflow_admin_password}"
 set_env METABASE_ADMIN_PASSWORD "${metabase_admin_password}"
 set_env KEYCLOAK_ADMIN_PASSWORD "${keycloak_admin_password}"
+set_env DATAIF_ADMIN_PASSWORD "${dataif_admin_password}"
 set_env METABASE_EMBED_SECRET "${metabase_embed_secret}"
 
 chmod 600 "${env_file}"

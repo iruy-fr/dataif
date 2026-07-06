@@ -20,7 +20,7 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: ${AIRFLOW_MIN_FILE_PROCESS_INTERVAL:-5}
     AIRFLOW__WEBSERVER__RBAC: "True"
     AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: UTC
-    AIRFLOW__WEBSERVER__BASE_URL: http://localhost:${WEB_PORT}/airflow
+    AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW_PUBLIC_URL:-http://localhost:5173/airflow}
     AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX: "True"
     AIRFLOW_UID: ${AIRFLOW_UID}
     PYTHONPATH: /opt/airflow/pipelines
@@ -166,6 +166,31 @@ services:
       - ./keycloak/realm-dataif.json:/opt/keycloak/data/import/realm-dataif.json:ro
     mem_limit: ${KEYCLOAK_MEM_LIMIT:-1024m}
 
+  keycloak-bootstrap:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      KEYCLOAK_URL: ${KEYCLOAK_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_ADMIN_REALM: ${KEYCLOAK_ADMIN_REALM:-master}
+      KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-admin-cli}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      DATAIF_ADMIN_USERNAME: ${DATAIF_ADMIN_USERNAME:-admin}
+      DATAIF_ADMIN_EMAIL: ${DATAIF_ADMIN_EMAIL:-admin@dataif.local}
+      DATAIF_ADMIN_PASSWORD: ${DATAIF_ADMIN_PASSWORD:-admin}
+      DATAIF_ADMIN_FIRST_NAME: ${DATAIF_ADMIN_FIRST_NAME:-DataIF}
+      DATAIF_ADMIN_LAST_NAME: ${DATAIF_ADMIN_LAST_NAME:-Admin}
+      NILO_TIMEOUT_SECONDS: ${NILO_TIMEOUT_SECONDS}
+    command: ["python", "-m", "app.keycloak_bootstrap"]
+    depends_on:
+      keycloak:
+        condition: service_started
+    restart: "no"
+
   vanna:
     build:
       context: ../services/vanna
@@ -255,6 +280,11 @@ services:
       KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID:-admin-cli}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      DATAIF_ADMIN_USERNAME: ${DATAIF_ADMIN_USERNAME:-admin}
+      DATAIF_ADMIN_EMAIL: ${DATAIF_ADMIN_EMAIL:-admin@dataif.local}
+      DATAIF_ADMIN_PASSWORD: ${DATAIF_ADMIN_PASSWORD:-admin}
+      DATAIF_ADMIN_FIRST_NAME: ${DATAIF_ADMIN_FIRST_NAME:-DataIF}
+      DATAIF_ADMIN_LAST_NAME: ${DATAIF_ADMIN_LAST_NAME:-Admin}
       VANNA_LLM_PROVIDER: ${VANNA_LLM_PROVIDER:-ollama}
       VANNA_OLLAMA_BASE_URL: ${VANNA_OLLAMA_BASE_URL:-http://ollama:11434}
       VANNA_OLLAMA_MODEL: ${VANNA_OLLAMA_MODEL:-sabia-7b}
@@ -263,9 +293,10 @@ services:
       VANNA_MARITACA_MODEL: ${VANNA_MARITACA_MODEL:-sabia-4}
       VANNA_MARITACA_TIMEOUT_SECONDS: ${VANNA_MARITACA_TIMEOUT_SECONDS:-60}
       AIRFLOW_API_URL: ${AIRFLOW_API_URL:-http://airflow-webserver:8080/airflow}
+      AIRFLOW_DAG_REGISTRATION_TIMEOUT_SECONDS: ${AIRFLOW_DAG_REGISTRATION_TIMEOUT_SECONDS:-240}
       AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER}
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
-      CORS_ALLOW_ORIGINS: http://localhost:${WEB_PORT}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:5173}
       NILO_TIMEOUT_SECONDS: ${NILO_TIMEOUT_SECONDS}
     ports:
       - "${API_PORT}:8000"
@@ -276,6 +307,8 @@ services:
     restart: unless-stopped
     depends_on:
       metabase-bootstrap:
+        condition: service_completed_successfully
+      keycloak-bootstrap:
         condition: service_completed_successfully
       vanna:
         condition: service_started
@@ -288,6 +321,8 @@ services:
         VITE_API_BASE_URL: ""
     ports:
       - "${WEB_PORT}:80"
+    environment:
+      DATAIF_PUBLIC_PORT: ${DATAIF_PUBLIC_PORT:-5173}
     mem_limit: ${WEB_MEM_LIMIT:-256m}
     depends_on:
       api:

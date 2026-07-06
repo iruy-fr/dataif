@@ -76,4 +76,8 @@ fi
 docker compose "${compose_args[@]}" up -d --build
 
 printf 'DataIF %s ativo.\n' "${mode}"
-printf 'Web: http://localhost:%s\n' "$(awk -F= '$1 == "WEB_PORT" {print $2}' "${ENV_FILE}")"
+public_url="$(awk -F= '$1 == "DATAIF_PUBLIC_BASE_URL" {print $2}' "${ENV_FILE}")"
+if [ -z "${public_url}" ]; then
+  public_url="http://localhost:$(awk -F= '$1 == "WEB_PORT" {print $2}' "${ENV_FILE}")"
+fi
+printf 'Web: %s\n' "${public_url}"

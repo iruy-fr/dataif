@@ -6,7 +6,7 @@ import { cx } from "./utils/cx";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const METABASE_URL = import.meta.env.VITE_METABASE_URL || "/metabase/";
-const AIRFLOW_URL = import.meta.env.VITE_AIRFLOW_URL || "http://localhost:8088/airflow/";
+const AIRFLOW_URL = import.meta.env.VITE_AIRFLOW_URL || "/airflow/";
 const GITHUB_REPO_URL = import.meta.env.VITE_GITHUB_REPO_URL || "https://github.com/iruy-fr/dataif";
 
 const NAV_ITEMS = [

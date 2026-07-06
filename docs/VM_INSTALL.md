@@ -1,6 +1,14 @@
-# Instalacao em VM Linux e VirtualBox NAT
+# Instalacao em VM Linux, Oracle Cloud e VirtualBox NAT
 
-Este guia complementa o `README.md` para uma VM Linux limpa, como Oracle Linux em VirtualBox NAT.
+Este guia complementa o `README.md` para uma VM Linux limpa, como Oracle Linux em Oracle Cloud ou VirtualBox NAT.
+
+## SSH
+
+Se o cliente SSH tiver muitas chaves carregadas, use a chave correta de forma explícita:
+
+```bash
+ssh -o IdentitiesOnly=yes -i ssh-key-2026-07-05.key opc@<ip>
+```
 
 ## Docker em Oracle Linux/RHEL compativel
 
@@ -24,11 +32,38 @@ docker info
 
 O CLI do DataIF diagnostica Docker ausente ou daemon parado, mas nao instala pacotes automaticamente.
 
+## Node.js
+
+Use Node.js 20 para executar `@dataif/cli`. Node.js 16 falha antes do deploy porque nao possui APIs usadas pelo CLI.
+
+```bash
+node --version
+```
+
+Se a versao for menor que 18, instale Node.js 20 antes de rodar `npx`.
+
+## Disco
+
+Reserve pelo menos 30 GB livres para imagens e volumes Docker. Em VM Oracle Cloud com disco raiz pequeno, anexe um block volume, formate em XFS, monte em `/dataif` e aponte o Docker para `/dataif/docker` via `/etc/docker/daemon.json`:
+
+```json
+{
+  "data-root": "/dataif/docker"
+}
+```
+
+Depois reinicie o Docker:
+
+```bash
+sudo systemctl restart docker
+docker info --format '{{.DockerRootDir}}'
+```
+
 ## Deploy
 
 ```bash
 npx @dataif/cli install
-npx @dataif/cli deploy --mode prod
+npx @dataif/cli deploy --mode prod --dir ~/.dataif/current
 npx @dataif/cli doctor
 ```
 
@@ -38,6 +73,22 @@ Se estiver usando uma pasta especifica:
 npx @dataif/cli install --dir ./dataif-local
 npx @dataif/cli deploy --dir ./dataif-local --mode prod
 npx @dataif/cli doctor --dir ./dataif-local
+```
+
+No prompt `URL publica da aplicacao`, informe a URL que o navegador vai usar, por exemplo `http://<ip>:5173`. Essa URL alimenta Airflow, Metabase, CORS e os links exibidos pelo CLI.
+
+## Firewall e OCI
+
+Libere as portas no `firewalld` da VM e também na Security List/NSG da OCI:
+
+```bash
+sudo firewall-cmd --permanent --add-port=5173/tcp
+sudo firewall-cmd --permanent --add-port=8000/tcp
+sudo firewall-cmd --permanent --add-port=3000/tcp
+sudo firewall-cmd --permanent --add-port=8088/tcp
+sudo firewall-cmd --permanent --add-port=8081/tcp
+sudo firewall-cmd --permanent --add-port=9000/tcp
+sudo firewall-cmd --reload
 ```
 
 ## VirtualBox NAT
@@ -78,3 +129,9 @@ npx @dataif/cli deploy --dir ./dataif-local --mode prod --force-env --reset-volu
 ```
 
 Esse comando apaga volumes locais da stack. Use apenas quando a instalacao puder ser recriada.
+
+Se alterar `infra/.env`, recrie os containers afetados. Exemplo para a API:
+
+```bash
+docker compose --env-file infra/.env -f infra/docker-compose.yml up -d --force-recreate api
+```

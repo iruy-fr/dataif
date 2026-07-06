@@ -78,8 +78,10 @@ npm pack --dry-run
 
 Pre-requisitos:
 - Docker Engine com Docker Compose v2
+- Node.js 18+ para usar a CLI npm; recomendado Node.js 20
 - 6 GB de RAM livres para stack basica
 - 12 GB de RAM livres se usar Ollama local
+- 30 GB livres recomendados para imagens e volumes Docker em VM
 
 Em VM Linux limpa, instale Docker manualmente antes do deploy. Em Oracle Linux/RHEL compativel:
 
@@ -92,6 +94,8 @@ sudo usermod -aG docker "$USER"
 ```
 
 Saia e entre novamente na sessao para o grupo `docker` ser aplicado. Para VirtualBox NAT e port forwarding, veja `docs/VM_INSTALL.md`.
+
+Em VM publica, configure `URL publica da aplicacao` como a URL final do navegador, por exemplo `http://<ip>:5173`. Essa URL configura os redirects do Airflow, a URL do Metabase, CORS e os links exibidos pelo CLI.
 
 Subir ambiente de teste/staging:
 

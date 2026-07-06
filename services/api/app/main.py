@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from threading import Lock
 from datetime import datetime, timezone
 from time import monotonic, sleep
@@ -1799,14 +1800,16 @@ def _build_pnp_instance_dag_id(instance: dict[str, Any]) -> str:
 def _wait_for_airflow_dag(
     dag_id: str,
     *,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float | None = None,
     poll_interval_seconds: float = 1.0,
+    diagnostic_context: dict[str, Any] | None = None,
 ) -> None:
     if not settings.airflow_api_url:
         raise HTTPException(status_code=500, detail="AIRFLOW_API_URL not configured")
 
     target_url = f"{settings.airflow_api_url.rstrip('/')}/api/v1/dags/{dag_id}"
-    deadline = monotonic() + max(timeout_seconds, poll_interval_seconds)
+    effective_timeout = timeout_seconds or float(settings.airflow_dag_registration_timeout_seconds)
+    deadline = monotonic() + max(effective_timeout, poll_interval_seconds)
     last_error: str | None = None
 
     while monotonic() < deadline:
@@ -1838,8 +1841,49 @@ def _wait_for_airflow_dag(
 
     raise HTTPException(
         status_code=502,
-        detail=last_error or f"Airflow nao registrou a DAG {dag_id} dentro do prazo esperado.",
+        detail={
+            "message": last_error or f"Airflow nao registrou a DAG {dag_id} dentro do prazo esperado.",
+            "dag_id": dag_id,
+            "timeout_seconds": effective_timeout,
+            "airflow_api_url": settings.airflow_api_url,
+            "diagnostics": _build_airflow_dag_registration_diagnostics(
+                dag_id=dag_id,
+                target_url=target_url,
+                context=diagnostic_context or {},
+            ),
+        },
     )
+
+
+def _build_airflow_dag_registration_diagnostics(
+    *,
+    dag_id: str,
+    target_url: str,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "target_url": target_url,
+        "scheduler_expected": True,
+    }
+    diagnostics.update(context)
+    dag_file = diagnostics.get("dag_file")
+    if isinstance(dag_file, str) and dag_file.strip():
+        path = Path(dag_file)
+        diagnostics["dag_file_exists"] = path.exists()
+        if path.exists():
+            diagnostics["dag_file_size_bytes"] = path.stat().st_size
+    try:
+        dags = _airflow_request("GET", "/api/v1/dags")
+        if isinstance(dags, dict):
+            items = dags.get("dags") or dags.get("items") or []
+            if isinstance(items, list):
+                diagnostics["airflow_dag_visible"] = any(
+                    isinstance(item, dict) and item.get("dag_id") == dag_id for item in items
+                )
+                diagnostics["airflow_dag_count"] = len(items)
+    except HTTPException as exc:
+        diagnostics["airflow_list_error"] = exc.detail
+    return diagnostics
 
 
 def _trigger_pnp_airflow_dag(dag_id: str, instance_key: str, *, operation: str) -> dict[str, Any]:
@@ -2314,8 +2358,18 @@ def create_pnp_pipeline(
 
     instance = _load_pnp_instance(instance_key)
     dag_id = _build_pnp_instance_dag_id(instance)
+    dag_file = pnp_dag_provisioner.generated_pipeline_dag_path(
+        instance_key=instance_key,
+        pipeline_id=str(instance.get("pipeline_id") or ""),
+    )
     try:
-        _wait_for_airflow_dag(dag_id)
+        _wait_for_airflow_dag(
+            dag_id,
+            diagnostic_context={
+                "instance_key": instance_key,
+                "dag_file": str(dag_file),
+            },
+        )
     except HTTPException:
         pnp_instance_repository.delete_instance(_db_connect, instance_key=instance_key)
         raise

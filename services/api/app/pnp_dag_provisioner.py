@@ -102,6 +102,10 @@ def provision_pipeline_dag(*, pipeline_id: str, instance_key: str, schedule: str
     return dag_id
 
 
+def generated_pipeline_dag_path(*, instance_key: str, pipeline_id: str | None = None) -> Path:
+    return _dag_file_path(instance_key, pipeline_id)
+
+
 def remove_pipeline_dag(*, instance_key: str, pipeline_id: str | None = None) -> str:
     dag_id = build_pipeline_dag_id(instance_key, pipeline_id)
     target = _dag_file_path(instance_key, pipeline_id)
