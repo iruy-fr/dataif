@@ -73,6 +73,10 @@ if [ "${DATAIF_DEPLOY_CONFIG_ONLY:-false}" = "true" ]; then
   exit 0
 fi
 
+printf 'Inicializando admin DataIF no Keycloak...\n'
+docker compose "${compose_args[@]}" up -d --build keycloak
+docker compose "${compose_args[@]}" up --build keycloak-bootstrap
+
 docker compose "${compose_args[@]}" up -d --build
 
 printf 'DataIF %s ativo.\n' "${mode}"

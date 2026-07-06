@@ -210,7 +210,7 @@ image_tag="$(read_value "Tag imagens" "latest")"
 
 prompt_section "Usuarios administrativos"
 admin_email="$(read_email "Email admin Metabase/Airflow" "admin@dataif.local")"
-dataif_admin_user="$(read_value "Usuario admin DataIF" "admin")"
+dataif_admin_user="$(read_value "Usuario admin DataIF" "dataif-admin")"
 dataif_admin_email="$(read_email "Email admin DataIF" "${admin_email}")"
 dataif_admin_first_name="$(read_value "Nome admin DataIF" "DataIF")"
 dataif_admin_last_name="$(read_value "Sobrenome admin DataIF" "Admin")"
