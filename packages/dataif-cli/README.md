@@ -23,6 +23,8 @@ Comandos:
 
 Use `dataif deploy --reset-volumes` apenas para recuperar uma instalacao local quebrada, pois ele recria os volumes da stack.
 
+Por padrao, `dataif deploy` baixa imagens publicadas em `DATAIF_IMAGE_REGISTRY` com a tag `DATAIF_IMAGE_TAG` do pacote. Use `dataif deploy --build-local` apenas para desenvolvimento com rebuild local e bind mounts de codigo.
+
 Por padrao, a instalacao fica em `~/.dataif/current`. Use `--dir <path>` para escolher outro destino.
 
 Em Oracle Linux/OCI, veja `docs/VM_INSTALL.md` no pacote instalado para requisitos de disco, portas e firewall.

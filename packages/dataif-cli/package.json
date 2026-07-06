@@ -1,6 +1,6 @@
 {
   "name": "@dataif/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI para instalar e subir o DataIF localmente com Docker Compose.",
   "type": "module",
   "bin": {

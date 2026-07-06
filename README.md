@@ -66,6 +66,12 @@ npx @dataif/cli deploy --dir ./dataif-local --mode prod --force-env --reset-volu
 
 `--reset-volumes` executa `docker compose down -v` e apaga dados locais da stack antes de subir novamente.
 
+Por padrao, `deploy` usa imagens publicadas em `DATAIF_IMAGE_REGISTRY` com a tag fixa `DATAIF_IMAGE_TAG` do pacote. Para desenvolvimento local com rebuild e bind mounts de codigo, use `--build-local`:
+
+```bash
+npx @dataif/cli deploy --mode stg --build-local
+```
+
 Durante o desenvolvimento do pacote:
 
 ```bash
@@ -103,7 +109,13 @@ Subir ambiente de teste/staging:
 ./scripts/deploy.sh stg
 ```
 
-Esse modo usa `infra/.env.stg.example`, cria `infra/.env` com valores presetados e sobe a mesma stack Docker do projeto. Use para desenvolvimento, testes e demonstracoes locais. Para recriar `infra/.env` de staging:
+Esse modo usa `infra/.env.stg.example`, cria `infra/.env` com valores presetados e sobe a stack usando imagens publicadas. Use para demonstracoes locais e validacao de instalacao. Para desenvolvimento com build local e volumes de codigo:
+
+```bash
+./scripts/deploy.sh stg --build-local
+```
+
+Para recriar `infra/.env` de staging:
 
 ```bash
 DATAIF_FORCE_ENV=true ./scripts/deploy.sh stg

@@ -79,7 +79,7 @@ function printMainHelp() {
 
 Uso:
   dataif install [--dir <path>] [--source <path>] [--force]
-  dataif deploy [--mode stg|prod] [--llm] [--dir <path>] [--yes] [--reset-volumes]
+  dataif deploy [--mode stg|prod] [--llm] [--build-local] [--dir <path>] [--yes] [--reset-volumes]
   dataif status [--dir <path>]
   dataif doctor [--dir <path>]
 
@@ -110,11 +110,12 @@ Opcoes:
 }
 
 function printDeployHelp() {
-  console.log(`Uso: dataif deploy [--mode stg|prod] [--llm] [--dir <path>] [--yes] [--reset-volumes]
+  console.log(`Uso: dataif deploy [--mode stg|prod] [--llm] [--build-local] [--dir <path>] [--yes] [--reset-volumes]
 
 Opcoes:
   --mode <mode>    stg ou prod. Se omitido, a CLI pergunta.
   --llm            Inclui profile llm/Ollama.
+  --build-local    Usa build local e volumes de desenvolvimento.
   --dir <path>     Pasta da instalacao. Padrao: ${defaultInstallDir}
   --yes            Nao pergunta confirmacao antes de subir containers.
   --force-env      Recria infra/.env a partir do template do modo.
@@ -160,7 +161,7 @@ async function installCommand(args) {
 }
 
 async function deployCommand(args) {
-  const options = parseOptions(args, { booleans: ["llm", "yes", "force-env", "reset-volumes"] });
+  const options = parseOptions(args, { booleans: ["llm", "build-local", "yes", "force-env", "reset-volumes"] });
   if (options.help) {
     printDeployHelp();
     return;
@@ -174,9 +175,12 @@ async function deployCommand(args) {
     fail(`Modo invalido: ${mode}. Use stg ou prod.`);
   }
 
+  const configOnly = process.env.DATAIF_DEPLOY_CONFIG_ONLY === "true";
   const projectDir = await resolveProjectDir(options.dir);
-  await validateDocker();
-  validateHostCapacity(projectDir);
+  await validateDocker({ requireDaemon: !configOnly });
+  if (!configOnly) {
+    validateHostCapacity(projectDir);
+  }
   const envPath = path.join(projectDir, "infra", ".env");
   if ((options["force-env"] || options["reset-volumes"]) && fs.existsSync(envPath)) {
     snapshotEnvFile(envPath);
@@ -191,21 +195,20 @@ async function deployCommand(args) {
   }
 
   console.log(`\nConfigurando DataIF (${mode}) em ${projectDir}`);
-  run(path.join(projectDir, "scripts", "deploy.sh"), buildDeployArgs(mode, options.llm), {
+  run(path.join(projectDir, "scripts", "deploy.sh"), buildDeployArgs(mode, options.llm, options["build-local"]), {
     cwd: projectDir,
     env,
     stdio: "inherit"
   });
 
   const envValues = readEnvFile(envPath);
-  const configOnly = process.env.DATAIF_DEPLOY_CONFIG_ONLY === "true";
   if (!configOnly) {
     await validatePorts(envValues, Boolean(options.yes));
   }
 
-  const composeArgs = buildComposeArgs(projectDir, envPath, Boolean(options.llm));
+  const composeArgs = buildComposeArgs(projectDir, envPath, Boolean(options.llm), Boolean(options["build-local"]));
 
-  printDeploySummary(projectDir, mode, Boolean(options.llm), envValues);
+  printDeploySummary(projectDir, mode, Boolean(options.llm), Boolean(options["build-local"]), envValues);
   if (options["reset-volumes"] && !options.yes) {
     const resetConfirmed = await confirm("Remover containers e volumes antes de subir? Isso apaga dados locais da stack", false);
     if (!resetConfirmed) {
@@ -239,11 +242,25 @@ async function deployCommand(args) {
     });
   }
 
-  console.log("\nSubindo stack DataIF...");
-  run("docker", [...composeArgs, "up", "-d", "--build"], {
-    cwd: path.join(projectDir, "infra"),
-    stdio: "inherit"
-  });
+  if (options["build-local"]) {
+    console.log("\nSubindo stack DataIF com build local...");
+    run("docker", [...composeArgs, "up", "-d", "--build"], {
+      cwd: path.join(projectDir, "infra"),
+      stdio: "inherit"
+    });
+  } else {
+    console.log("\nBaixando imagens DataIF...");
+    run("docker", [...composeArgs, "pull"], {
+      cwd: path.join(projectDir, "infra"),
+      stdio: "inherit"
+    });
+
+    console.log("\nSubindo stack DataIF...");
+    run("docker", [...composeArgs, "up", "-d"], {
+      cwd: path.join(projectDir, "infra"),
+      stdio: "inherit"
+    });
+  }
 
   console.log("\nDataIF ativo.");
   console.log(`Web: ${publicBaseUrl(envValues)}`);
@@ -454,7 +471,14 @@ async function resolveProjectDir(dirOption) {
   if (dirOption) {
     const dir = expandHome(dirOption);
     if (!isProjectRoot(dir)) {
-      fail(`A pasta informada nao parece uma instalacao DataIF: ${dir}`);
+      const canPrepare = !fs.existsSync(dir) || fs.readdirSync(dir).length === 0;
+      if (!canPrepare) {
+        fail(`A pasta informada nao parece uma instalacao DataIF: ${dir}`);
+      }
+      const source = resolveInstallSource();
+      console.log(`Instalacao informada nao encontrada. Preparando ${dir}...`);
+      await prepareInstallDir(source, dir, false);
+      ensureProjectRoot(dir, "instalacao");
     }
     return dir;
   }
@@ -569,19 +593,23 @@ function validateNodeRuntime() {
   }
 }
 
-async function validateDocker() {
+async function validateDocker({ requireDaemon = true } = {}) {
   const docker = spawnSync("docker", ["--version"], { encoding: "utf8" });
-  if (docker.error || docker.status !== 0) {
+  if (docker.status !== 0) {
     fail("Docker nao encontrado. Instale/inicie Docker Engine antes de rodar o deploy.");
   }
 
   const compose = spawnSync("docker", ["compose", "version"], { encoding: "utf8" });
-  if (compose.error || compose.status !== 0) {
+  if (compose.status !== 0) {
     fail("Docker Compose v2 nao encontrado. Verifique se `docker compose version` funciona.");
   }
 
+  if (!requireDaemon) {
+    return;
+  }
+
   const daemon = spawnSync("docker", ["info"], { encoding: "utf8" });
-  if (daemon.error || daemon.status !== 0) {
+  if (daemon.status !== 0) {
     fail("Docker esta instalado, mas o daemon nao respondeu. Inicie o Docker e tente novamente.");
   }
 }
@@ -682,15 +710,18 @@ function isPortAvailable(port) {
   });
 }
 
-function buildDeployArgs(mode, includeLlm) {
+function buildDeployArgs(mode, includeLlm, buildLocal) {
   const args = [mode];
   if (includeLlm) {
     args.push("--llm");
   }
+  if (buildLocal) {
+    args.push("--build-local");
+  }
   return args;
 }
 
-function buildComposeArgs(projectDir, envPath, includeLlm) {
+function buildComposeArgs(projectDir, envPath, includeLlm, buildLocal = false) {
   const args = [
     "compose",
     "--env-file",
@@ -698,6 +729,9 @@ function buildComposeArgs(projectDir, envPath, includeLlm) {
     "-f",
     path.join(projectDir, "infra", "docker-compose.yml")
   ];
+  if (buildLocal) {
+    args.push("-f", path.join(projectDir, "infra", "docker-compose.dev.yml"));
+  }
   if (includeLlm) {
     args.push("--profile", "llm");
   }
@@ -714,7 +748,7 @@ function snapshotEnvFile(envPath) {
 
 function checkCommand(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8" });
-  if (result.error || result.status !== 0) {
+  if (result.status !== 0) {
     return { ok: false, detail: result.stderr || result.error?.message || "falha desconhecida" };
   }
   return { ok: true, detail: (result.stdout || "ok").trim().split("\n")[0] };
@@ -807,12 +841,15 @@ function readEnvFile(envPath) {
   return values;
 }
 
-function printDeploySummary(projectDir, mode, includeLlm, envValues) {
+function printDeploySummary(projectDir, mode, includeLlm, buildLocal, envValues) {
   const baseUrl = publicBaseUrl(envValues);
+  const registry = envValues.DATAIF_IMAGE_REGISTRY || "docker.io/dataif";
+  const tag = envValues.DATAIF_IMAGE_TAG || "0.1.2";
   console.log("\nResumo do deploy");
   console.log(`- Pasta: ${projectDir}`);
   console.log(`- Modo: ${mode}`);
   console.log(`- Projeto Compose: ${envValues.COMPOSE_PROJECT_NAME || "dataif"}`);
+  console.log(`- Origem: ${buildLocal ? "build local" : `${registry}/*:${tag}`}`);
   console.log(`- Web: ${baseUrl}`);
   console.log(`- API: http://localhost:${envValues.API_PORT || "8000"}`);
   console.log(`- Metabase: ${baseUrl}/metabase/`);
@@ -887,7 +924,7 @@ function run(command, args, options = {}) {
     encoding: options.stdio === "inherit" ? undefined : "utf8"
   });
 
-  if (result.error) {
+  if (result.error && result.status === null) {
     fail(`Falha ao executar ${command}: ${result.error.message}`);
   }
   if (result.status !== 0) {

@@ -7,16 +7,18 @@ ENV_FILE="${INFRA_DIR}/.env"
 STG_TEMPLATE="${INFRA_DIR}/.env.stg.example"
 PROD_TEMPLATE="${INFRA_DIR}/.env.example"
 COMPOSE_FILE="${INFRA_DIR}/docker-compose.yml"
+DEV_COMPOSE_FILE="${INFRA_DIR}/docker-compose.dev.yml"
 
 usage() {
   cat <<'USAGE'
-Uso: ./scripts/deploy.sh stg|prod [--llm]
+Uso: ./scripts/deploy.sh stg|prod [--llm] [--build-local]
 
 stg   Sobe ambiente local de teste com variaveis presetadas.
 prod  Sobe ambiente local de producao com configuração interativa.
 
 Opcoes:
-  --llm  Inclui Ollama e bootstrap do modelo local.
+  --llm          Inclui Ollama e bootstrap do modelo local.
+  --build-local  Usa build local e volumes de desenvolvimento.
 
 Variaveis:
   DATAIF_FORCE_ENV=true  Recria infra/.env a partir do template do modo.
@@ -33,10 +35,12 @@ if [ "${mode}" != "stg" ] && [ "${mode}" != "prod" ]; then
 fi
 
 compose_args=(--env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
+build_local=false
 
 for arg in "$@"; do
   case "${arg}" in
     --llm) compose_args+=(--profile llm) ;;
+    --build-local) build_local=true ;;
     -h|--help)
       usage
       exit 0
@@ -48,6 +52,10 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "${build_local}" = "true" ]; then
+  compose_args+=(-f "${DEV_COMPOSE_FILE}")
+fi
 
 if [ "${mode}" = "stg" ]; then
   if [ ! -f "${ENV_FILE}" ] || [ "${DATAIF_FORCE_ENV:-false}" = "true" ]; then
@@ -74,10 +82,16 @@ if [ "${DATAIF_DEPLOY_CONFIG_ONLY:-false}" = "true" ]; then
 fi
 
 printf 'Inicializando admin DataIF no Keycloak...\n'
-docker compose "${compose_args[@]}" up -d --build keycloak
-docker compose "${compose_args[@]}" up --build keycloak-bootstrap
-
-docker compose "${compose_args[@]}" up -d --build
+if [ "${build_local}" = "true" ]; then
+  docker compose "${compose_args[@]}" up -d --build keycloak
+  docker compose "${compose_args[@]}" up --build keycloak-bootstrap
+  docker compose "${compose_args[@]}" up -d --build
+else
+  docker compose "${compose_args[@]}" pull
+  docker compose "${compose_args[@]}" up -d keycloak
+  docker compose "${compose_args[@]}" up keycloak-bootstrap
+  docker compose "${compose_args[@]}" up -d
+fi
 
 printf 'DataIF %s ativo.\n' "${mode}"
 public_url="$(awk -F= '$1 == "DATAIF_PUBLIC_BASE_URL" {print $2}' "${ENV_FILE}")"

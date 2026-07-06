@@ -1,8 +1,6 @@
 x-airflow-common:
   &airflow-common
-  build:
-    context: ./airflow
-    dockerfile: Dockerfile
+  image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-airflow:${DATAIF_IMAGE_TAG:-0.1.2}
   env_file:
     - .env
   environment:
@@ -28,9 +26,7 @@ x-airflow-common:
     NILO_PECANHA_ENDPOINT: ${NILO_PECANHA_ENDPOINT}
     NILO_TIMEOUT_SECONDS: ${NILO_TIMEOUT_SECONDS}
   volumes:
-    - ../pipelines/airflow/dags:/opt/airflow/dags
-    - ../pipelines/dataif_pipelines:/opt/airflow/pipelines/dataif_pipelines
-    - ../pipelines/sql:/opt/airflow/pipelines/sql
+    - airflow_generated_dags:/opt/airflow/dags/generated
     - airflow_logs:/opt/airflow/logs
   mem_limit: ${AIRFLOW_MEM_LIMIT:-1024m}
   depends_on:
@@ -132,9 +128,7 @@ services:
       retries: 12
 
   metabase-bootstrap:
-    build:
-      context: ../services/api
-      dockerfile: Dockerfile
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-api:${DATAIF_IMAGE_TAG:-0.1.2}
     env_file:
       - .env
     environment:
@@ -171,9 +165,7 @@ services:
     mem_limit: ${KEYCLOAK_MEM_LIMIT:-1024m}
 
   keycloak-bootstrap:
-    build:
-      context: ../services/api
-      dockerfile: Dockerfile
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-api:${DATAIF_IMAGE_TAG:-0.1.2}
     env_file:
       - .env
     environment:
@@ -196,9 +188,7 @@ services:
     restart: "no"
 
   vanna:
-    build:
-      context: ../services/vanna
-      dockerfile: Dockerfile
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-vanna:${DATAIF_IMAGE_TAG:-0.1.2}
     env_file:
       - .env
     environment:
@@ -237,9 +227,7 @@ services:
     mem_limit: ${OLLAMA_MEM_LIMIT:-8192m}
 
   ollama-model-bootstrap:
-    build:
-      context: ./ollama
-      dockerfile: Dockerfile
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-ollama-bootstrap:${DATAIF_IMAGE_TAG:-0.1.2}
     profiles: ["llm"]
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
@@ -256,9 +244,7 @@ services:
     restart: "no"
 
   api:
-    build:
-      context: ../services/api
-      dockerfile: Dockerfile
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-api:${DATAIF_IMAGE_TAG:-0.1.2}
     env_file:
       - .env
     environment:
@@ -305,8 +291,7 @@ services:
     ports:
       - "${API_PORT}:8000"
     volumes:
-      - ../services/api/app:/app/app
-      - ../pipelines/airflow/dags:/app/pipelines/airflow/dags
+      - airflow_generated_dags:/app/pipelines/airflow/dags/generated
     mem_limit: ${API_MEM_LIMIT:-512m}
     restart: unless-stopped
     depends_on:
@@ -318,11 +303,7 @@ services:
         condition: service_started
 
   web:
-    build:
-      context: ../services/web
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: ""
+    image: ${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}/dataif-web:${DATAIF_IMAGE_TAG:-0.1.2}
     ports:
       - "${WEB_PORT}:80"
     environment:
@@ -339,6 +320,7 @@ services:
 volumes:
   postgres_data:
   airflow_logs:
+  airflow_generated_dags:
   metabase_data:
   vanna_data:
   ollama_data:

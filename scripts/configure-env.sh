@@ -206,7 +206,7 @@ vanna_port="$(read_value "Porta Vanna host" "9000")"
 
 prompt_section "Imagens"
 image_registry="$(read_value "Registry imagens" "docker.io/dataif")"
-image_tag="$(read_value "Tag imagens" "latest")"
+image_tag="$(read_value "Tag imagens" "0.1.2")"
 
 prompt_section "Usuarios administrativos"
 admin_email="$(read_email "Email admin Metabase/Airflow" "admin@dataif.local")"

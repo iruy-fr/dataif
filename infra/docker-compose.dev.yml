@@ -1,0 +1,60 @@
+x-airflow-dev-volumes:
+  &airflow-dev-volumes
+  - ../pipelines/airflow/dags:/opt/airflow/dags
+  - ../pipelines/dataif_pipelines:/opt/airflow/pipelines/dataif_pipelines
+  - ../pipelines/sql:/opt/airflow/pipelines/sql
+  - airflow_logs:/opt/airflow/logs
+
+services:
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    volumes: *airflow-dev-volumes
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    volumes: *airflow-dev-volumes
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    volumes: *airflow-dev-volumes
+
+  metabase-bootstrap:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+
+  keycloak-bootstrap:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+
+  vanna:
+    build:
+      context: ../services/vanna
+      dockerfile: Dockerfile
+
+  ollama-model-bootstrap:
+    build:
+      context: ./ollama
+      dockerfile: Dockerfile
+
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    volumes:
+      - ../services/api/app:/app/app
+      - ../pipelines/airflow/dags:/app/pipelines/airflow/dags
+
+  web:
+    build:
+      context: ../services/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ""

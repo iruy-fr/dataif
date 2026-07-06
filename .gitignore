@@ -17,3 +17,5 @@ docs/modular
 docs/plans
 packages/dataif-cli/templates/
 docs/deploy-vm-oracle-erros.md
+docs/metabase-postgres-conexao-oracle-vm.md
+dataif/

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REGISTRY="${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}"
-TAG="${DATAIF_IMAGE_TAG:-latest}"
+TAG="${DATAIF_IMAGE_TAG:-0.1.2}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_FLAGS=(--pull)
 
@@ -22,8 +22,6 @@ build_and_push() {
   docker push "${REGISTRY}/${image_name}:${TAG}"
 }
 
-build_and_push "dataif-postgres" "${ROOT_DIR}" "${ROOT_DIR}/infra/postgres/Dockerfile"
-build_and_push "dataif-keycloak" "${ROOT_DIR}" "${ROOT_DIR}/infra/keycloak/Dockerfile"
 build_and_push "dataif-airflow" "${ROOT_DIR}" "${ROOT_DIR}/infra/airflow/Dockerfile.release"
 build_and_push "dataif-api" "${ROOT_DIR}/services/api" "${ROOT_DIR}/services/api/Dockerfile"
 build_and_push "dataif-web" "${ROOT_DIR}/services/web" "${ROOT_DIR}/services/web/Dockerfile"
