@@ -65,6 +65,81 @@ class MetabaseAdminClient:
     def delete_user(self, user_id: int | str) -> None:
         self._request("DELETE", f"/api/user/{user_id}", expected_status={200, 204})
 
+    def list_databases(self) -> list[dict[str, Any]]:
+        payload = self._request("GET", "/api/database", expected_status={200})
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+        if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+            return [item for item in payload["data"] if isinstance(item, dict)]
+        return []
+
+    def find_postgres_database(self, *, name: str, host: str, dbname: str) -> dict[str, Any] | None:
+        target_name = name.strip().lower()
+        target_host = host.strip().lower()
+        target_dbname = dbname.strip().lower()
+        for database in self.list_databases():
+            if str(database.get("engine") or "").strip().lower() != "postgres":
+                continue
+            database_name = str(database.get("name") or "").strip().lower()
+            if database_name == target_name:
+                return database
+            details = database.get("details")
+            if not isinstance(details, dict):
+                continue
+            database_host = str(details.get("host") or "").strip().lower()
+            database_dbname = str(details.get("dbname") or "").strip().lower()
+            if database_host == target_host and database_dbname == target_dbname:
+                return database
+        return None
+
+    def ensure_postgres_database(
+        self,
+        *,
+        name: str,
+        host: str,
+        port: int,
+        dbname: str,
+        user: str,
+        password: str,
+        ssl: bool = False,
+    ) -> dict[str, Any]:
+        payload = {
+            "name": name,
+            "engine": "postgres",
+            "details": {
+                "host": host,
+                "port": port,
+                "dbname": dbname,
+                "user": user,
+                "password": password,
+                "ssl": ssl,
+            },
+        }
+        existing = self.find_postgres_database(name=name, host=host, dbname=dbname)
+        if existing:
+            database_id = existing.get("id")
+            if database_id is None or str(database_id).strip() == "":
+                raise HTTPException(status_code=502, detail="Metabase database id was not returned")
+            updated = self._request("PUT", f"/api/database/{database_id}", json=payload, expected_status={200})
+            database = updated if isinstance(updated, dict) else {**existing, **payload}
+            self.sync_database(database_id)
+            return {"created": False, "updated": True, "database": database}
+
+        created = self._request("POST", "/api/database", json=payload, expected_status={200, 201})
+        if not isinstance(created, dict):
+            raise HTTPException(status_code=502, detail="Metabase did not return the created database")
+        self.sync_database(created.get("id"))
+        return {"created": True, "updated": False, "database": created}
+
+    def sync_database(self, database_id: int | str | None) -> None:
+        if database_id is None or str(database_id).strip() == "":
+            raise HTTPException(status_code=502, detail="Metabase database id was not returned")
+        self._request("POST", f"/api/database/{database_id}/sync_schema", expected_status={200, 202, 204})
+        try:
+            self._request("POST", f"/api/database/{database_id}/rescan_values", expected_status={200, 202, 204})
+        except HTTPException:
+            pass
+
     def ensure_initial_admin(
         self,
         *,

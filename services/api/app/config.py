@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     dataif_admin_last_name: str = Field(default="Admin", alias="DATAIF_ADMIN_LAST_NAME")
 
     warehouse_dsn: str = Field(default="", alias="WAREHOUSE_DSN")
+    dataif_db_name: str = Field(default="dataif", alias="DATAIF_DB_NAME")
+    dataif_metabase_user: str = Field(default="metabase_user", alias="DATAIF_METABASE_USER")
+    dataif_metabase_password: str = Field(default="metabase_password", alias="DATAIF_METABASE_PASSWORD")
     airflow_api_url: str = Field(default="http://airflow-webserver:8080/airflow", alias="AIRFLOW_API_URL")
     airflow_admin_user: str = Field(default="admin", alias="AIRFLOW_ADMIN_USER")
     airflow_admin_password: str = Field(default="admin", alias="AIRFLOW_ADMIN_PASSWORD")
