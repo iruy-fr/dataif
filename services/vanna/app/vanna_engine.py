@@ -13,7 +13,42 @@ if TYPE_CHECKING:
     from .config import Settings
     from sqlalchemy import Engine
 
-from .runtime_config import RuntimeVannaConfig, load_runtime_vanna_config
+from .runtime_config import RuntimeVannaConfig, _coerce_positive_int, load_runtime_vanna_config
+
+# Marcador usado quando a LLM julga o contexto insuficiente para gerar SQL. O prompt padrao da
+# lib vanna instrui a LLM a "explicar por que nao pode gerar" nesse caso (texto livre, sem SQL),
+# o que quebra o SQLGuard com um erro generico ("Only SELECT statements are allowed"). Prefixar
+# a resposta com este marcador deixa esse caso detectavel de forma confiavel em main.py, para
+# devolver ao usuario uma mensagem clara pedindo mais contexto, em vez de um erro tecnico.
+CONTEXT_INSUFFICIENT_MARKER = "CONTEXTO_INSUFICIENTE:"
+
+_INITIAL_PROMPT = (
+    "Voce e um especialista em PostgreSQL. Ajude a gerar uma consulta SQL para responder a "
+    "pergunta. Sua resposta deve se basear apenas no contexto fornecido (DDL, documentacao e "
+    "exemplos abaixo) e seguir as diretrizes de resposta."
+)
+
+_RESPONSE_GUIDELINES = (
+    "===Diretrizes de resposta \n"
+    "1. Se o contexto fornecido for suficiente, gere apenas uma consulta SQL valida para a "
+    "pergunta, sem nenhuma explicacao. Prefira sempre tentar responder com os dados "
+    "disponiveis, mesmo que a pergunta seja ampla ou generica -- para perguntas sobre quais "
+    "dados/tabelas existem, use curated.vw_pnp_vanna_catalogo; para indicadores gerais, use "
+    "curated.vw_pnp_vanna_resumo. \n"
+    "2. Se o contexto for quase suficiente mas faltar o valor exato de uma coluna categorica, "
+    "use a documentacao de valores codificados fornecida acima; NAO gere uma consulta "
+    "intermediaria (intermediate_sql) -- este ambiente nao permite executa-la. \n"
+    f"3. Use a opcao a seguir apenas como ultimo recurso, quando a pergunta genuinamente nao "
+    f"tiver relacao com nenhuma tabela, view ou exemplo do contexto fornecido (ex.: pergunta "
+    f"sobre assunto fora do dominio, como clima ou noticias): responda apenas com uma unica "
+    f"linha no formato {CONTEXT_INSUFFICIENT_MARKER} <motivo em poucas palavras, em "
+    "portugues>. Nao inclua mais nada nessa resposta. \n"
+    "4. Utilize a tabela/view mais adequada disponivel no contexto. \n"
+    "5. Se a pergunta ja foi feita e respondida antes, repita a resposta exatamente como foi "
+    "dada. \n"
+    "6. Garanta que a SQL de saida seja compativel com PostgreSQL, executavel e livre de erros "
+    "de sintaxe. \n"
+)
 
 
 @dataclass(frozen=True)
@@ -162,8 +197,14 @@ class DataifVannaEngine:
                 vn.train(ddl=self._build_ddl(relation))
             for item in self._load_catalog_documentation():
                 vn.train(documentation=item)
-            for query in self._approved_examples():
-                vn.train(sql=query)
+            for item in self._domain_value_documentation():
+                vn.train(documentation=item)
+            for question, sql in self._approved_examples():
+                # question sempre explicito: sem isso, vanna.train(sql=...) chama a LLM para
+                # gerar a pergunta (generate_question), o que exige API key so para treinar e
+                # produz perguntas menos fieis ao fraseado real do usuario do que os exemplos
+                # curados abaixo.
+                vn.train(question=question, sql=sql)
             self._trained = True
 
     def _run_sql_dataframe(self, sql: str) -> Any:
@@ -196,7 +237,13 @@ class DataifVannaEngine:
                     LEFT JOIN pg_catalog.pg_matviews mv
                       ON mv.schemaname = c.table_schema
                      AND mv.matviewname = c.table_name
+                    LEFT JOIN pg_catalog.pg_namespace pn
+                      ON pn.nspname = c.table_schema
+                    LEFT JOIN pg_catalog.pg_class pc
+                      ON pc.relname = c.table_name
+                     AND pc.relnamespace = pn.oid
                     WHERE c.table_schema = :allowed_schema
+                      AND COALESCE(pc.relispartition, FALSE) = FALSE
                     ORDER BY table_schema, table_name, ordinal_position
                     """
                 ),
@@ -276,6 +323,12 @@ class DataifVannaEngine:
         config: dict[str, Any] = {
             "model": runtime.model_name(),
             "path": runtime.vectorstore_path,
+            # vanna.base.base.VannaBase.generate_sql le "initial_prompt" da propria config para
+            # montar o prompt de geracao de SQL (get_sql_prompt). A lib sempre concatena suas
+            # proprias guidelines em ingles logo apos isto, entao este texto funciona como reforco
+            # (idioma, orientacao sobre intermediate_sql), nao como garantia -- a deteccao real de
+            # "sem SQL na resposta" acontece em main.py, independente do formato da explicacao.
+            "initial_prompt": _INITIAL_PROMPT + "\n\n" + _RESPONSE_GUIDELINES,
         }
         provider = runtime.provider
         if provider == "ollama":
@@ -352,31 +405,178 @@ class DataifVannaEngine:
         columns = ",\n  ".join(f"{name} {data_type}" for name, data_type in relation.columns)
         return f"-- RELATION TYPE: {relation.relation_type}\nCREATE TABLE {relation.full_name} (\n  {columns}\n);"
 
-    def _approved_examples(self) -> list[str]:
+    def _domain_value_documentation(self) -> list[str]:
         if self.allowed_schema != "curated":
             return []
         return [
             (
+                "Para perguntas sobre matriculas, prefira sempre curated.mv_pnp_dashboard_matriculas "
+                "(tabela particionada por ano e indexada) em vez de curated.vw_pnp_matriculas_perfil "
+                "ou curated.vw_pnp_matriculas_oferta (views nao materializadas, recalculadas por "
+                "completo a cada consulta). Use as views pesadas apenas quando a pergunta exigir "
+                "eixo_tecnologico ou subeixo_tecnologico, colunas que nao existem na fonte rapida."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, sempre que possivel filtre por 'ano' "
+                "(coluna de particionamento) para a consulta ser rapida; se a pergunta mencionar "
+                "uma instituicao, filtre tambem por 'instituicao' (geralmente a sigla, ex.: 'IFRS')."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna sexo usa codigos curtos: "
+                "'F' (feminino), 'M' (masculino), 'S/I' (sem informacao). Nunca usar "
+                "'Feminino'/'Masculino' como literal."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna cor_raca aceita os valores: "
+                "'Amarela', 'Branca', 'Indigena', 'Parda', 'Preta', 'Nao declarada', 'S/I'."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna faixa_etaria aceita os valores: "
+                "'Menor de 14 anos', '15 a 19 anos', '20 a 24 anos', '25 a 29 anos', '30 a 34 anos', "
+                "'35 a 39 anos', '40 a 44 anos', '45 a 49 anos', '50 a 54 anos', '55 a 59 anos', "
+                "'Maior de 60 anos', 'S/I'."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna renda_familiar aceita os valores: "
+                "'0<RFP<=0,5', '0,5<RFP<=1', '1<RFP<=1,5', '1,5<RFP<=2,5', '2,5<RFP<=3,5', "
+                "'RFP>3,5', 'Nao declarada', 'S/I' (RFP = renda familiar per capita em salarios minimos)."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna modalidade_ensino aceita os "
+                "valores: 'Educacao Presencial', 'Educacao a Distancia'."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna turno aceita os valores: "
+                "'Matutino', 'Vespertino', 'Noturno', 'Integral', 'Nao se aplica', 'Sem Informacao'."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna situacao_matricula aceita os "
+                "valores: 'Em curso', 'Concluida', 'Integralizada', 'Abandono', 'Cancelada', "
+                "'Desligada', 'Reprovado', 'Transf. externa', 'Transf. interna'."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna tipo_curso aceita os valores: "
+                "'Tecnico', 'Tecnologia', 'Bacharelado', 'Licenciatura', 'ABI', "
+                "'Qualificacao Profissional (FIC)', 'Especializacao Tecnica', "
+                "'Especializacao (Lato Sensu)', 'Mestrado', 'Mestrado Profissional', 'Doutorado', "
+                "'Doutorado Profissional', 'Ensino Fundamental I', 'Ensino Fundamental II', "
+                "'Ensino Medio', 'Educacao Infantil'."
+            ),
+            (
+                "Em curated.mv_pnp_dashboard_matriculas, a coluna tipo_oferta aceita os valores: "
+                "'Integrado', 'Concomitante', 'Subsequente', 'Todos', 'Nao se aplica', "
+                "'PROEJA -', 'PROEJA - Integrado', 'PROEJA - Concomitante', 'PROEJA - Subsequente'."
+            ),
+        ]
+
+    def _approved_examples(self) -> list[tuple[str, str]]:
+        if self.allowed_schema != "curated":
+            return []
+        return [
+            (
+                "Qual o total por dominio e indicador?",
                 "SELECT dominio, indicador, ano, SUM(valor) AS total "
                 "FROM curated.vw_pnp_vanna_resumo "
                 "GROUP BY dominio, indicador, ano "
-                "ORDER BY ano DESC, dominio, indicador LIMIT 50"
+                "ORDER BY ano DESC, dominio, indicador LIMIT 50",
             ),
             (
+                "Quais relacoes existem no catalogo de dados?",
                 "SELECT relation_group, relation_name, relation_description "
                 "FROM curated.vw_pnp_vanna_catalogo "
-                "ORDER BY relation_group, relation_name LIMIT 50"
+                "ORDER BY relation_group, relation_name LIMIT 50",
             ),
+            # organizacao / territorio
             (
-                "SELECT instituicao, ano, SUM(valor) AS total_matriculas "
-                "FROM curated.vw_pnp_vanna_resumo "
-                "WHERE dominio = 'matriculas' "
-                "GROUP BY instituicao, ano "
-                "ORDER BY ano DESC, total_matriculas DESC LIMIT 50"
+                "Qual a quantidade de matriculas do IFRS em 2025?",
+                "SELECT ano, instituicao, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 AND instituicao = 'IFRS' "
+                "GROUP BY ano, instituicao LIMIT 50",
             ),
+            # serie historica sem filtro de ano
             (
+                "Qual a evolucao do total de matriculas por ano?",
                 "SELECT ano, SUM(matriculas) AS total_matriculas "
                 "FROM curated.mv_pnp_dashboard_matriculas "
-                "GROUP BY ano ORDER BY ano DESC LIMIT 50"
+                "GROUP BY ano ORDER BY ano DESC LIMIT 50",
+            ),
+            # sexo
+            (
+                "Qual a quantidade de matriculas de pessoas do sexo feminino em 2025?",
+                "SELECT sexo, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 AND sexo = 'F' "
+                "GROUP BY sexo LIMIT 50",
+            ),
+            # cor/raca
+            (
+                "Quantas matriculas de pessoas pretas houve em 2025?",
+                "SELECT cor_raca, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 AND cor_raca = 'Preta' "
+                "GROUP BY cor_raca LIMIT 50",
+            ),
+            # faixa etaria
+            (
+                "Como as matriculas de 2025 se distribuem por faixa etaria?",
+                "SELECT faixa_etaria, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 "
+                "GROUP BY faixa_etaria ORDER BY total_matriculas DESC LIMIT 50",
+            ),
+            # renda familiar
+            (
+                "Como as matriculas de 2025 se distribuem por faixa de renda familiar?",
+                "SELECT renda_familiar, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 "
+                "GROUP BY renda_familiar ORDER BY total_matriculas DESC LIMIT 50",
+            ),
+            # tipo de curso / modalidade / turno
+            (
+                "Quantas matriculas existem por tipo de curso em 2025?",
+                "SELECT tipo_curso, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 "
+                "GROUP BY tipo_curso ORDER BY total_matriculas DESC LIMIT 50",
+            ),
+            (
+                "Quantas matriculas na modalidade a distancia houve em 2025?",
+                "SELECT modalidade_ensino, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 "
+                "GROUP BY modalidade_ensino LIMIT 50",
+            ),
+            (
+                "Quantas matriculas no turno noturno houve em 2025?",
+                "SELECT turno, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 "
+                "GROUP BY turno LIMIT 50",
+            ),
+            # ranking de cursos
+            (
+                "Quais os cursos com mais matriculas no IFRS em 2025?",
+                "SELECT nome_curso, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 AND instituicao = 'IFRS' "
+                "GROUP BY nome_curso ORDER BY total_matriculas DESC LIMIT 20",
+            ),
+            # situacao da matricula
+            (
+                "Quantas matriculas concluidas houve em 2025?",
+                "SELECT situacao_matricula, SUM(matriculas) AS total_matriculas "
+                "FROM curated.mv_pnp_dashboard_matriculas "
+                "WHERE ano = 2025 "
+                "GROUP BY situacao_matricula ORDER BY total_matriculas DESC LIMIT 50",
+            ),
+            # caso legitimo de uso da view pesada (colunas que nao existem na fonte rapida)
+            (
+                "Quais os eixos tecnologicos com mais matriculas em 2025?",
+                "SELECT eixo_tecnologico, SUM(matriculas) AS total_matriculas "
+                "FROM curated.vw_pnp_matriculas_oferta "
+                "WHERE ano = 2025 "
+                "GROUP BY eixo_tecnologico ORDER BY total_matriculas DESC LIMIT 50",
             ),
         ]

@@ -46,7 +46,7 @@ SELECT
     uf,
     municipio,
     SUM(matriculas)::NUMERIC AS valor
-FROM curated.vw_pnp_matriculas_perfil
+FROM curated.mv_pnp_dashboard_matriculas
 GROUP BY
     run_id,
     instance_key,
