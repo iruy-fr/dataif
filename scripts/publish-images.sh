@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REGISTRY="${DATAIF_IMAGE_REGISTRY:-docker.io/dataif}"
-TAG="${DATAIF_IMAGE_TAG:-0.1.3}"
+TAG="${DATAIF_IMAGE_TAG:-0.1.4}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_FLAGS=(--pull)
 
