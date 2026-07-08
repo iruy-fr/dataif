@@ -844,7 +844,7 @@ function readEnvFile(envPath) {
 function printDeploySummary(projectDir, mode, includeLlm, buildLocal, envValues) {
   const baseUrl = publicBaseUrl(envValues);
   const registry = envValues.DATAIF_IMAGE_REGISTRY || "docker.io/dataif";
-  const tag = envValues.DATAIF_IMAGE_TAG || "0.1.2";
+  const tag = envValues.DATAIF_IMAGE_TAG || "0.1.3";
   console.log("\nResumo do deploy");
   console.log(`- Pasta: ${projectDir}`);
   console.log(`- Modo: ${mode}`);
