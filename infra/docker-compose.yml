@@ -55,6 +55,13 @@ services:
       AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
       METABASE_APP_DB_USER: ${METABASE_APP_DB_USER}
       METABASE_APP_DB_PASSWORD: ${METABASE_APP_DB_PASSWORD}
+    command: >
+      postgres
+      -c shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      -c effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-768MB}
+      -c work_mem=${POSTGRES_WORK_MEM:-16MB}
+      -c maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-128MB}
+      -c max_parallel_workers_per_gather=${POSTGRES_MAX_PARALLEL_WORKERS_PER_GATHER:-2}
     ports:
       - "${POSTGRES_EXPOSE_PORT:-5433}:5432"
     volumes:

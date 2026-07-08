@@ -286,40 +286,106 @@ SELECT run_id, instance_key, 'financeiro' AS dominio, 'liquidacoes_totais' AS in
 FROM curated.vw_pnp_financeiro_execucao
 GROUP BY run_id, instance_key, ano, nome_uo;
 
+-- curated.mv_pnp_dashboard_matriculas eh uma TABLE particionada por RANGE (ano), nao uma
+-- MATERIALIZED VIEW: ver sql/views_curated/004_mv_pnp_dashboard_fast.sql para o historico do
+-- problema de performance que motivou o particionamento. Este .sqlinc so roda no bootstrap
+-- inicial de um volume Postgres novo (staging.pnp_matriculas ainda esta vazia nesse momento);
+-- a definicao aqui precisa ficar em sincronia com 004_mv_pnp_dashboard_fast.sql, que e quem
+-- efetivamente recria este objeto a cada rodada da pipeline PNP.
 DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_matriculas CASCADE;
-CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_matriculas AS
+DROP TABLE IF EXISTS curated.mv_pnp_dashboard_matriculas CASCADE;
+
+CREATE TABLE curated.mv_pnp_dashboard_matriculas (
+  run_id             TEXT,
+  instance_key       TEXT,
+  ano                INTEGER,
+  instituicao        TEXT,
+  regiao             TEXT,
+  uf                 TEXT,
+  municipio          TEXT,
+  sexo               TEXT,
+  cor_raca           TEXT,
+  renda_familiar     TEXT,
+  faixa_etaria       TEXT,
+  situacao_matricula TEXT,
+  modalidade_ensino  TEXT,
+  tipo_curso         TEXT,
+  tipo_oferta        TEXT,
+  turno              TEXT,
+  nome_curso         TEXT,
+  matriculas         BIGINT,
+  vagas_ofertadas    NUMERIC,
+  inscritos          NUMERIC
+) PARTITION BY RANGE (ano);
+
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2017 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2017) TO (2018);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2018 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2018) TO (2019);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2019 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2019) TO (2020);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2020 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2020) TO (2021);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2021 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2021) TO (2022);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2022 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2022) TO (2023);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2023 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2023) TO (2024);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2024 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2024) TO (2025);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_y2025 PARTITION OF curated.mv_pnp_dashboard_matriculas FOR VALUES FROM (2025) TO (2026);
+CREATE TABLE curated.mv_pnp_dashboard_matriculas_default PARTITION OF curated.mv_pnp_dashboard_matriculas DEFAULT;
+
+INSERT INTO curated.mv_pnp_dashboard_matriculas (
+  run_id, instance_key, ano, instituicao, regiao, uf, municipio,
+  sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula,
+  modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso,
+  matriculas, vagas_ofertadas, inscritos
+)
 SELECT
-  run_id,
-  instance_key,
-  ano,
-  instituicao,
-  regiao,
-  uf,
-  municipio,
-  sexo,
-  cor_raca,
-  renda_familiar,
-  faixa_etaria,
-  situacao_matricula,
-  modalidade_ensino,
-  tipo_curso,
-  tipo_oferta,
-  turno,
-  nome_curso,
+  run_id, instance_key, ano, instituicao, regiao, uf, municipio,
+  sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula,
+  modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso,
   COUNT(*) AS matriculas,
   SUM(vagas_ofertadas) AS vagas_ofertadas,
   SUM(total_inscritos) AS inscritos
 FROM staging.pnp_matriculas
-GROUP BY run_id, instance_key, ano, instituicao, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula, modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso;
+GROUP BY
+  run_id, instance_key, ano, instituicao, regiao, uf, municipio,
+  sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula,
+  modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso;
 
-CREATE INDEX idx_mv_pnp_dashboard_matriculas_geo
-  ON curated.mv_pnp_dashboard_matriculas (run_id, ano, instituicao, regiao, uf, municipio);
-CREATE INDEX idx_mv_pnp_dashboard_matriculas_perfil
-  ON curated.mv_pnp_dashboard_matriculas (sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula);
-CREATE INDEX idx_mv_pnp_dashboard_matriculas_oferta
-  ON curated.mv_pnp_dashboard_matriculas (modalidade_ensino, tipo_curso, tipo_oferta, turno);
-CREATE INDEX idx_mv_pnp_dashboard_matriculas_curso
-  ON curated.mv_pnp_dashboard_matriculas (nome_curso);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_ano_wide
+  ON curated.mv_pnp_dashboard_matriculas (ano)
+  INCLUDE (
+    instituicao, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria,
+    situacao_matricula, modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso,
+    matriculas, vagas_ofertadas, inscritos
+  );
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_instituicao_wide
+  ON curated.mv_pnp_dashboard_matriculas (instituicao)
+  INCLUDE (
+    ano, regiao, uf, municipio, sexo, cor_raca, renda_familiar, faixa_etaria,
+    situacao_matricula, modalidade_ensino, tipo_curso, tipo_oferta, turno, nome_curso,
+    matriculas, vagas_ofertadas, inscritos
+  );
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_ano_metrics
+  ON curated.mv_pnp_dashboard_matriculas (ano) INCLUDE (matriculas, inscritos, vagas_ofertadas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_sexo_only
+  ON curated.mv_pnp_dashboard_matriculas (sexo) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_cor_raca_only
+  ON curated.mv_pnp_dashboard_matriculas (cor_raca) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_faixa_etaria_only
+  ON curated.mv_pnp_dashboard_matriculas (faixa_etaria) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_renda_only
+  ON curated.mv_pnp_dashboard_matriculas (renda_familiar) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_situacao_only
+  ON curated.mv_pnp_dashboard_matriculas (situacao_matricula) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_tipo_curso_only
+  ON curated.mv_pnp_dashboard_matriculas (tipo_curso) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_modalidade_only
+  ON curated.mv_pnp_dashboard_matriculas (modalidade_ensino) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_turno_only
+  ON curated.mv_pnp_dashboard_matriculas (turno) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_regiao_only
+  ON curated.mv_pnp_dashboard_matriculas (regiao) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_uf_only
+  ON curated.mv_pnp_dashboard_matriculas (uf) INCLUDE (matriculas);
+CREATE INDEX idx_mv_pnp_dashboard_matriculas_metrics_only
+  ON curated.mv_pnp_dashboard_matriculas (matriculas) INCLUDE (inscritos, vagas_ofertadas);
 
 DROP MATERIALIZED VIEW IF EXISTS curated.mv_pnp_dashboard_eficiencia CASCADE;
 CREATE MATERIALIZED VIEW curated.mv_pnp_dashboard_eficiencia AS

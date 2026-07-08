@@ -129,6 +129,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE ${DATAIF_ETL_USER} IN SCHEMA raw GRANT SELECT 
 ALTER DEFAULT PRIVILEGES FOR ROLE ${DATAIF_ETL_USER} IN SCHEMA staging GRANT SELECT ON TABLES TO ${DATAIF_METABASE_USER};
 ALTER DEFAULT PRIVILEGES FOR ROLE ${DATAIF_ETL_USER} IN SCHEMA curated GRANT SELECT ON TABLES TO ${DATAIF_METABASE_USER};
 
+-- Rede de seguranca: uma query de dashboard mal escrita/sem indice adequado falha rapido e
+-- com erro claro no Metabase em vez de pendurar ate o timeout do proxy (nginx).
+ALTER ROLE ${DATAIF_METABASE_USER} SET statement_timeout = '30s';
+
 GRANT USAGE ON SCHEMA config, curated TO ${DATAIF_VANNA_USER};
 GRANT SELECT ON config.app_settings TO ${DATAIF_VANNA_USER};
 GRANT SELECT ON ALL TABLES IN SCHEMA curated TO ${DATAIF_VANNA_USER};
