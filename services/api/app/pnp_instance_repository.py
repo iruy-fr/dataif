@@ -11,7 +11,7 @@ from . import pnp_dag_provisioner
 
 PNP_INTERNAL_CONNECTOR_ID = "nilo_pecanha"
 PNP_POWERBI_GROUP_LABEL = "Microdados Publicos"
-PNP_POWERBI_SOURCE_LABEL = "Catalogo publico de microdados via Power BI"
+PNP_POWERBI_SOURCE_LABEL = "Catálogo público de microdados via Power BI"
 
 _CONNECTION_ENTITY = "connection"
 _PIPELINE_ENTITY = "pipeline"
@@ -32,6 +32,11 @@ _ENDPOINT_TABLE_CATALOG: tuple[dict[str, str | None], ...] = (
         "staging_table_name": "pnp_matriculas",
         "curated_relation_schema": "curated",
         "curated_relation_name": "vw_pnp_matriculas_perfil",
+        # Chaves correspondentes em raw.pnp_runs.run_summary_json->'checks', gravado pelo
+        # Airflow (finalize_run) a partir de collect_run_checks() a cada execucao da pipeline.
+        "raw_checks_key": "matriculas_count",
+        "staging_checks_key": "staging_matriculas_count",
+        "curated_checks_key": "curated_matriculas_perfil_count",
     },
     {
         "endpoint_key": "eficiencia_academica",
@@ -43,6 +48,9 @@ _ENDPOINT_TABLE_CATALOG: tuple[dict[str, str | None], ...] = (
         "staging_table_name": "pnp_eficiencia_academica",
         "curated_relation_schema": "curated",
         "curated_relation_name": "vw_pnp_eficiencia_situacao",
+        "raw_checks_key": "eficiencia_academica_count",
+        "staging_checks_key": "staging_eficiencia_academica_count",
+        "curated_checks_key": "curated_eficiencia_situacao_count",
     },
     {
         "endpoint_key": "servidores",
@@ -54,6 +62,9 @@ _ENDPOINT_TABLE_CATALOG: tuple[dict[str, str | None], ...] = (
         "staging_table_name": "pnp_servidores",
         "curated_relation_schema": "curated",
         "curated_relation_name": "vw_pnp_servidores_quadro",
+        "raw_checks_key": "servidores_count",
+        "staging_checks_key": "staging_servidores_count",
+        "curated_checks_key": "curated_servidores_quadro_count",
     },
     {
         "endpoint_key": "financeiro",
@@ -65,6 +76,9 @@ _ENDPOINT_TABLE_CATALOG: tuple[dict[str, str | None], ...] = (
         "staging_table_name": "pnp_financeiro",
         "curated_relation_schema": "curated",
         "curated_relation_name": "vw_pnp_financeiro_execucao",
+        "raw_checks_key": "financeiro_count",
+        "staging_checks_key": "staging_financeiro_count",
+        "curated_checks_key": "curated_financeiro_execucao_count",
     },
 )
 
@@ -949,3 +963,214 @@ def delete_connection(connect_factory: Callable[[], Any], *, connection_key: str
         "mode": "physical_delete",
         "already_deleted": deleted_connection_rows == 0,
     }
+
+
+def _coerce_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized and normalized.lstrip("-").isdigit():
+            return int(normalized)
+    return None
+
+
+def _describe_pnp_diagnostic(item: dict[str, Any]) -> dict[str, Any]:
+    status = str(item.get("status") or "missing").strip().lower()
+    raw_record_count = _coerce_int(item.get("raw_record_count")) or 0
+    staging_record_count = _coerce_int(item.get("staging_record_count")) or 0
+    curated_record_count = _coerce_int(item.get("curated_record_count")) or 0
+
+    if curated_record_count > 0:
+        return {
+            "operational_status": "curated_ready",
+            "severity": "ready",
+            "message": "A pipeline ja publicou o endpoint na camada curated.",
+        }
+
+    if staging_record_count > 0:
+        return {
+            "operational_status": "staging_ready",
+            "severity": "ready",
+            "message": "O endpoint ja foi deduplicado e materializado em staging.",
+        }
+
+    if status in {"running", "queued"}:
+        return {
+            "operational_status": "running",
+            "severity": "pending",
+            "message": "O endpoint esta em processamento na execucao atual.",
+        }
+
+    if status in {"ok", "success", "cataloged"}:
+        if raw_record_count > 0:
+            return {
+                "operational_status": "raw_loaded",
+                "severity": "ready",
+                "message": "Microdados públicos validados e persistidos em raw.",
+            }
+        return {
+            "operational_status": "validated",
+            "severity": "ready",
+            "message": "Catálogo público resolvido e pronto para ingestão.",
+        }
+
+    if status == "error":
+        return {
+            "operational_status": "error",
+            "severity": "danger",
+            "message": "A leitura dos microdados públicos falhou.",
+        }
+
+    return {
+        "operational_status": "missing",
+        "severity": "pending",
+        "message": "A fonte ainda nao produziu manifesto recente.",
+    }
+
+
+def load_instance_diagnostics(connect_factory: Callable[[], Any], instance_key: str) -> list[dict[str, Any]]:
+    """Le os diagnosticos (contagens raw/staging/curated por endpoint) direto do
+    metadado de execucao que o Airflow ja grava a cada rodada da pipeline
+    (raw.pnp_runs.run_summary_json->'checks', escrito por finalize_run em
+    pipelines/dataif_pipelines/orchestration/pnp_workflow.py). Nao recalcula nada:
+    apenas localiza, por endpoint, a execucao mais recente com um download/catalogo
+    correspondente e extrai as contagens ja persistidas nela.
+    """
+    catalog_by_endpoint = {str(item["endpoint_key"]): item for item in _ENDPOINT_TABLE_CATALOG}
+
+    with _connect(connect_factory) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            WITH pipeline_endpoints AS (
+              SELECT
+                pe.instance_key,
+                pe.endpoint_key,
+                et.endpoint_name,
+                et.tipo_microdados
+              FROM raw.pnp_pipeline_endpoints pe
+              JOIN raw.pnp_endpoint_tables et
+                ON et.endpoint_key = pe.endpoint_key
+              WHERE pe.instance_key = %s
+                AND pe.is_active = TRUE
+                AND et.is_active = TRUE
+            ),
+            endpoint_runs AS (
+              SELECT
+                pe.endpoint_key,
+                pe.endpoint_name,
+                pe.tipo_microdados,
+                r.run_id,
+                r.status AS run_status,
+                r.started_at,
+                r.finished_at,
+                d.microdados_url AS source_url,
+                d.status AS download_status,
+                d.error_message AS download_error,
+                d.row_count_raw,
+                COALESCE(d.finished_at, d.started_at, r.finished_at, r.started_at) AS updated_at,
+                r.run_summary_json -> 'checks' AS checks,
+                (
+                  SELECT COUNT(*)
+                  FROM raw.pnp_catalog_entries c
+                  WHERE c.run_id = r.run_id
+                    AND c.tipo_microdados = pe.tipo_microdados
+                ) AS catalog_entry_count,
+                ROW_NUMBER() OVER (
+                  PARTITION BY pe.endpoint_key
+                  ORDER BY COALESCE(d.finished_at, d.started_at, r.finished_at, r.started_at) DESC, r.run_id DESC
+                ) AS row_num
+              FROM pipeline_endpoints pe
+              JOIN raw.pnp_runs r
+                ON r.instance_key = pe.instance_key
+              LEFT JOIN LATERAL (
+                SELECT
+                  microdados_url,
+                  status,
+                  error_message,
+                  row_count_raw,
+                  started_at,
+                  finished_at
+                FROM raw.pnp_downloads d
+                WHERE d.run_id = r.run_id
+                  AND d.tipo_microdados = pe.tipo_microdados
+                ORDER BY COALESCE(d.finished_at, d.started_at) DESC, d.download_id DESC
+                LIMIT 1
+              ) d ON TRUE
+              WHERE d.microdados_url IS NOT NULL
+                 OR EXISTS (
+                   SELECT 1
+                   FROM raw.pnp_catalog_entries c
+                   WHERE c.run_id = r.run_id
+                     AND c.tipo_microdados = pe.tipo_microdados
+                 )
+            )
+            SELECT
+              pe.endpoint_key,
+              pe.endpoint_name,
+              pe.tipo_microdados,
+              er.run_id AS diagnostic_run_id,
+              er.source_url,
+              er.updated_at,
+              er.run_status,
+              er.download_status,
+              er.download_error,
+              er.row_count_raw,
+              er.checks,
+              er.catalog_entry_count
+            FROM pipeline_endpoints pe
+            LEFT JOIN endpoint_runs er
+              ON er.endpoint_key = pe.endpoint_key
+             AND er.row_num = 1
+            ORDER BY pe.endpoint_key
+            """,
+            (instance_key,),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        endpoint_key = str(row.get("endpoint_key") or "")
+        catalog_entry = catalog_by_endpoint.get(endpoint_key, {})
+        checks = row.get("checks") or {}
+
+        raw_key = catalog_entry.get("raw_checks_key")
+        staging_key = catalog_entry.get("staging_checks_key")
+        curated_key = catalog_entry.get("curated_checks_key")
+        raw_record_count = _coerce_int(checks.get(raw_key)) if raw_key else None
+        staging_record_count = _coerce_int(checks.get(staging_key)) if staging_key else None
+        curated_record_count = _coerce_int(checks.get(curated_key)) if curated_key else None
+        diagnostics_available = bool(checks) and bool(raw_key) and raw_key in checks
+
+        diagnostic = {
+            "endpoint_key": row.get("endpoint_key"),
+            "endpoint_name": row.get("endpoint_name"),
+            "tipo_microdados": row.get("tipo_microdados"),
+            "ingestion_mode": "powerbi_microdados",
+            "source_label": PNP_POWERBI_SOURCE_LABEL,
+            "source_group": PNP_POWERBI_GROUP_LABEL,
+            "source_path": "powerbi_microdados",
+            "run_id": row.get("diagnostic_run_id"),
+            "source_url": row.get("source_url"),
+            "updated_at": row.get("updated_at"),
+            "status": row.get("download_status") or ("cataloged" if _coerce_int(row.get("catalog_entry_count")) else "missing"),
+            "row_count": row.get("row_count_raw") or raw_record_count,
+            "selected_years": [],
+            "selected_microdados_types": [row.get("tipo_microdados")] if row.get("tipo_microdados") else [],
+            "downloads": [],
+            "raw_run_id": row.get("diagnostic_run_id"),
+            "raw_record_count": raw_record_count,
+            "staging_record_count": staging_record_count,
+            "curated_record_count": curated_record_count,
+            "raw_updated_at": row.get("updated_at"),
+            "error": row.get("download_error") if row.get("run_status") != "success" else None,
+            "diagnostics_available": diagnostics_available,
+        }
+        diagnostic.update(_describe_pnp_diagnostic(diagnostic))
+        items.append(diagnostic)
+
+    return items

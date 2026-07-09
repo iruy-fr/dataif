@@ -1081,7 +1081,8 @@ function PipelinesPage({
   connections,
   selectedPipelineKey,
   onSelectPipeline,
-  overview,
+  diagnosticsOverview,
+  timelineOverview,
   dagRuns,
   pipelineAction,
   deleteAction,
@@ -1103,7 +1104,10 @@ function PipelinesPage({
     );
   }
 
-  const selectedOverview = overview?.instance?.instance_key === selectedPipelineKey ? overview : null;
+  const selectedDiagnostics =
+    diagnosticsOverview?.instance?.instance_key === selectedPipelineKey ? diagnosticsOverview : null;
+  const selectedTimeline =
+    timelineOverview?.instance?.instance_key === selectedPipelineKey ? timelineOverview : null;
   const selectedPipeline = pipelines.find((instance) => instance.instance_key === selectedPipelineKey) || null;
   const catalog = connectorDefinition?.selection_catalog || {};
   const availableYears = catalog.available_years || [];
@@ -1249,7 +1253,7 @@ function PipelinesPage({
           <div className="selection-list">
             {pipelines.map((instance) => {
               const isSelected = selectedPipelineKey === instance.instance_key;
-              const status = isSelected ? selectedOverview?.ingestion?.status || "pending" : "pending";
+              const status = isSelected ? selectedTimeline?.ingestion?.status || "pending" : "pending";
 
               return (
                 <button
@@ -1309,12 +1313,12 @@ function PipelinesPage({
               ) : null
             }
           >
-            {selectedOverview && selectedPipeline ? (
+            {selectedPipeline ? (
               <div className="stack">
                 <SummaryGrid
                   items={[
                     { label: "conexão", value: selectedPipeline.connection_name || selectedPipeline.connection_key },
-                    { label: "Status", value: formatStatus(selectedOverview.ingestion.status) },
+                    { label: "Status", value: formatStatus(selectedTimeline?.ingestion?.status) },
                     { label: "Anos", value: serializeSelection(selectedPipeline.selected_years) || "-" },
                     { label: "Tipos", value: serializeSelection(selectedPipeline.selected_microdados_types) || "-" },
                     { label: "Cron", value: selectedPipeline.schedule || "-" },
@@ -1325,7 +1329,7 @@ function PipelinesPage({
                   <div className="subsection">
                     <h3>Diagnóstico</h3>
                     <div className="record-list">
-                      {(selectedOverview.diagnostics || []).map((item) => (
+                      {(selectedDiagnostics?.diagnostics || []).map((item) => (
                         <div key={item.endpoint_key} className="record-row">
                           <div>
                             <strong>{item.source_label || item.endpoint_key}</strong>
@@ -1334,14 +1338,14 @@ function PipelinesPage({
                           <StatusBadge status={item.operational_status} />
                         </div>
                       ))}
-                      {(selectedOverview.diagnostics || []).length === 0 ? <p className="muted">Sem diagnóstico.</p> : null}
+                      {(selectedDiagnostics?.diagnostics || []).length === 0 ? <p className="muted">Sem diagnóstico.</p> : null}
                     </div>
                   </div>
 
                   <div className="subsection">
                     <h3>Timeline</h3>
                     <div className="record-list">
-                      {(selectedOverview.run_events || []).map((event) => (
+                      {(selectedTimeline?.run_events || []).map((event) => (
                         <div key={`${event.stage}-${event.run_id}`} className="record-row">
                           <div>
                             <strong>{event.stage_label}</strong>
@@ -1350,7 +1354,7 @@ function PipelinesPage({
                           <StatusBadge status={event.state} />
                         </div>
                       ))}
-                      {(selectedOverview.run_events || []).length === 0 ? <p className="muted">Sem eventos.</p> : null}
+                      {(selectedTimeline?.run_events || []).length === 0 ? <p className="muted">Sem eventos.</p> : null}
                     </div>
                   </div>
                 </div>
@@ -2273,7 +2277,8 @@ export default function App() {
   const [selectedConnectionKey, setSelectedConnectionKey] = useState("");
   const [selectedPipelineKey, setSelectedPipelineKey] = useState("");
   const [connectionDetail, setConnectionDetail] = useState(null);
-  const [pipelineOverview, setPipelineOverview] = useState(null);
+  const [pipelineDiagnostics, setPipelineDiagnostics] = useState(null);
+  const [pipelineTimeline, setPipelineTimeline] = useState(null);
   const [dagRuns, setDagRuns] = useState([]);
   const [connectionForm, setConnectionForm] = useState(INITIAL_CONNECTION_FORM);
   const [pipelineForm, setPipelineForm] = useState(INITIAL_PIPELINE_FORM);
@@ -2384,21 +2389,31 @@ export default function App() {
 
   async function loadSelectedPipeline(instanceKey) {
     if (!instanceKey || auth.status !== "authenticated") {
-      setPipelineOverview(null);
+      setPipelineDiagnostics(null);
+      setPipelineTimeline(null);
       setDagRuns([]);
       return;
     }
 
-    try {
-      const [overviewResponse, dagRunResponse] = await Promise.all([
-        adminRequest(`/api/admin/pipelines/pnp/${instanceKey}/admin-overview`),
-        adminRequest(`/api/admin/pipelines/pnp/${instanceKey}/dag-runs`),
-      ]);
-      setPipelineOverview(overviewResponse);
-      setDagRuns(dagRunResponse.items || []);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Falha ao carregar a pipeline.");
-    }
+    // Cada secao busca e atualiza seu proprio estado assim que resolve, em vez de
+    // esperar as outras -- diagnostics/timeline/dag-runs sao independentes entre si.
+    await Promise.allSettled([
+      adminRequest(`/api/admin/pipelines/pnp/${instanceKey}/diagnostics`)
+        .then((response) => setPipelineDiagnostics(response))
+        .catch((requestError) => {
+          setError(requestError instanceof Error ? requestError.message : "Falha ao carregar o diagnostico da pipeline.");
+        }),
+      adminRequest(`/api/admin/pipelines/pnp/${instanceKey}/timeline`)
+        .then((response) => setPipelineTimeline(response))
+        .catch((requestError) => {
+          setError(requestError instanceof Error ? requestError.message : "Falha ao carregar a timeline da pipeline.");
+        }),
+      adminRequest(`/api/admin/pipelines/pnp/${instanceKey}/dag-runs`)
+        .then((response) => setDagRuns(response.items || []))
+        .catch((requestError) => {
+          setError(requestError instanceof Error ? requestError.message : "Falha ao carregar as execucoes da pipeline.");
+        }),
+    ]);
   }
 
   useEffect(() => {
@@ -2414,7 +2429,8 @@ export default function App() {
     setSelectedConnectionKey("");
     setSelectedPipelineKey("");
     setConnectionDetail(null);
-    setPipelineOverview(null);
+    setPipelineDiagnostics(null);
+    setPipelineTimeline(null);
     setDagRuns([]);
   }, [auth.status]);
 
@@ -2623,7 +2639,8 @@ export default function App() {
       const response = await adminRequest(`/api/admin/pipelines/pnp/instances/${instanceKey}`, { method: "DELETE" });
       setNotice(`Pipeline ${response.instance_name} excluida com sucesso.`);
       setSelectedPipelineKey("");
-      setPipelineOverview(null);
+      setPipelineDiagnostics(null);
+      setPipelineTimeline(null);
       setDagRuns([]);
       await loadPipelines();
       await loadConnections();
@@ -2649,7 +2666,8 @@ export default function App() {
       setSelectedConnectionKey("");
       setConnectionDetail(null);
       setSelectedPipelineKey("");
-      setPipelineOverview(null);
+      setPipelineDiagnostics(null);
+      setPipelineTimeline(null);
       setDagRuns([]);
       await loadConnections();
       await loadPipelines();
@@ -2699,7 +2717,8 @@ export default function App() {
         connections={connections}
         selectedPipelineKey={selectedPipelineKey}
         onSelectPipeline={setSelectedPipelineKey}
-        overview={pipelineOverview}
+        diagnosticsOverview={pipelineDiagnostics}
+        timelineOverview={pipelineTimeline}
         dagRuns={dagRuns}
         pipelineAction={pipelineAction}
         deleteAction={deleteAction}

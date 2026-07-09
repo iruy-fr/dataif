@@ -27,7 +27,7 @@ from .vanna_client import ask_vanna
 
 PNP_INTERNAL_CONNECTOR_ID = "nilo_pecanha"
 PNP_POWERBI_GROUP_LABEL = "Microdados Publicos"
-PNP_POWERBI_SOURCE_LABEL = "Catalogo publico de microdados via Power BI"
+PNP_POWERBI_SOURCE_LABEL = "Catálogo público de microdados via Power BI"
 PNP_CONNECTION_ENTITY = "connection"
 PNP_PIPELINE_ENTITY = "pipeline"
 METABASE_DEFAULT_DASHBOARD_SETTING_KEY = "metabase.default_dashboard_id"
@@ -46,17 +46,17 @@ PNP_RUNTIME_TASK_META = {
     },
     "extract_raw": {
         "stage": "extract_raw",
-        "stage_label": "Extracao de microdados",
+        "stage_label": "Extração de microdados",
         "message": "A extração e a carga bruta dos microdados foram concluídas.",
     },
     "materialize_staging": {
         "stage": "materialize_staging",
-        "stage_label": "Materializacao de staging",
+        "stage_label": "Materialização de staging",
         "message": "A staging deduplicada foi materializada.",
     },
     "build_curated_views": {
         "stage": "build_curated_views",
-        "stage_label": "Publicacao de curated",
+        "stage_label": "Publicação de curated",
         "message": "As views e materialized views curadas foram publicadas.",
     },
     "run_quality_checks": {
@@ -1318,235 +1318,6 @@ def _safe_parse_json_text(value: object) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _describe_pnp_diagnostic(item: dict[str, Any]) -> dict[str, Any]:
-    status = str(item.get("status") or "missing").strip().lower()
-    raw_record_count = _coerce_int(item.get("raw_record_count")) or 0
-    staging_record_count = _coerce_int(item.get("staging_record_count")) or 0
-    curated_record_count = _coerce_int(item.get("curated_record_count")) or 0
-
-    if curated_record_count > 0:
-        return {
-            "operational_status": "curated_ready",
-            "severity": "ready",
-            "message": "A pipeline ja publicou o endpoint na camada curated.",
-        }
-
-    if staging_record_count > 0:
-        return {
-            "operational_status": "staging_ready",
-            "severity": "ready",
-            "message": "O endpoint ja foi deduplicado e materializado em staging.",
-        }
-
-    if status in {"running", "queued"}:
-        return {
-            "operational_status": "running",
-            "severity": "pending",
-            "message": "O endpoint esta em processamento na execucao atual.",
-        }
-
-    if status in {"ok", "success", "cataloged"}:
-        if raw_record_count > 0:
-            return {
-                "operational_status": "raw_loaded",
-                "severity": "ready",
-                "message": "Microdados públicos validados e persistidos em raw.",
-            }
-        return {
-            "operational_status": "validated",
-            "severity": "ready",
-            "message": "Catálogo público resolvido e pronto para ingestão.",
-        }
-
-    if status == "error":
-        return {
-            "operational_status": "error",
-            "severity": "danger",
-            "message": "A leitura dos microdados públicos falhou.",
-        }
-
-    return {
-        "operational_status": "missing",
-        "severity": "pending",
-        "message": "A fonte ainda nao produziu manifesto recente.",
-    }
-
-
-def _summarize_pnp_diagnostics(diagnostics: list[dict[str, Any]]) -> dict[str, Any]:
-    summary = {
-        "total": len(diagnostics),
-        "ready": 0,
-        "attention": 0,
-        "missing": 0,
-        "raw_loaded": 0,
-        "validated": 0,
-        "last_updated_at": None,
-    }
-
-    latest_timestamp: datetime | None = None
-    for item in diagnostics:
-        operational_status = str(item.get("operational_status") or "missing")
-        if operational_status == "raw_loaded":
-            summary["raw_loaded"] += 1
-            summary["ready"] += 1
-        elif operational_status == "validated":
-            summary["validated"] += 1
-            summary["ready"] += 1
-        elif operational_status == "missing":
-            summary["missing"] += 1
-        else:
-            summary["attention"] += 1
-
-        updated_at = _parse_iso_datetime(item.get("updated_at"))
-        if updated_at and (latest_timestamp is None or updated_at > latest_timestamp):
-            latest_timestamp = updated_at
-            summary["last_updated_at"] = item.get("updated_at")
-
-    return summary
-
-
-def _load_pnp_instance_diagnostics(instance_key: str) -> list[dict[str, Any]]:
-    with _db_connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            WITH pipeline_endpoints AS (
-              SELECT
-                pe.instance_key,
-                pe.endpoint_key,
-                et.endpoint_name,
-                et.tipo_microdados
-              FROM raw.pnp_pipeline_endpoints pe
-              JOIN raw.pnp_endpoint_tables et
-                ON et.endpoint_key = pe.endpoint_key
-              WHERE pe.instance_key = %s
-                AND pe.is_active = TRUE
-                AND et.is_active = TRUE
-            ),
-            endpoint_runs AS (
-              SELECT
-                pe.endpoint_key,
-                pe.endpoint_name,
-                pe.tipo_microdados,
-                r.run_id,
-                r.status AS run_status,
-                r.started_at,
-                r.finished_at,
-                d.microdados_url AS source_url,
-                d.status AS download_status,
-                d.error_message AS download_error,
-                d.row_count_raw,
-                COALESCE(d.finished_at, d.started_at, r.finished_at, r.started_at) AS updated_at,
-                CASE pe.endpoint_key
-                  WHEN 'matriculas' THEN (SELECT COUNT(*) FROM raw.pnp_matriculas_src src WHERE src.run_id = r.run_id)
-                  WHEN 'eficiencia_academica' THEN (SELECT COUNT(*) FROM raw.pnp_eficiencia_academica_src src WHERE src.run_id = r.run_id)
-                  WHEN 'servidores' THEN (SELECT COUNT(*) FROM raw.pnp_servidores_src src WHERE src.run_id = r.run_id)
-                  WHEN 'financeiro' THEN (SELECT COUNT(*) FROM raw.pnp_financeiro_src src WHERE src.run_id = r.run_id)
-                  ELSE 0
-                END AS raw_record_count,
-                CASE pe.endpoint_key
-                  WHEN 'matriculas' THEN (SELECT COUNT(*) FROM staging.pnp_matriculas src WHERE src.run_id = r.run_id)
-                  WHEN 'eficiencia_academica' THEN (SELECT COUNT(*) FROM staging.pnp_eficiencia_academica src WHERE src.run_id = r.run_id)
-                  WHEN 'servidores' THEN (SELECT COUNT(*) FROM staging.pnp_servidores src WHERE src.run_id = r.run_id)
-                  WHEN 'financeiro' THEN (SELECT COUNT(*) FROM staging.pnp_financeiro src WHERE src.run_id = r.run_id)
-                  ELSE 0
-                END AS staging_record_count,
-                CASE pe.endpoint_key
-                  WHEN 'matriculas' THEN (SELECT COUNT(*) FROM curated.vw_pnp_matriculas_perfil src WHERE src.run_id = r.run_id)
-                  WHEN 'eficiencia_academica' THEN (SELECT COUNT(*) FROM curated.vw_pnp_eficiencia_situacao src WHERE src.run_id = r.run_id)
-                  WHEN 'servidores' THEN (SELECT COUNT(*) FROM curated.vw_pnp_servidores_quadro src WHERE src.run_id = r.run_id)
-                  WHEN 'financeiro' THEN (SELECT COUNT(*) FROM curated.vw_pnp_financeiro_execucao src WHERE src.run_id = r.run_id)
-                  ELSE 0
-                END AS curated_record_count,
-                (
-                  SELECT COUNT(*)
-                  FROM raw.pnp_catalog_entries c
-                  WHERE c.run_id = r.run_id
-                    AND c.tipo_microdados = pe.tipo_microdados
-                ) AS catalog_entry_count,
-                ROW_NUMBER() OVER (
-                  PARTITION BY pe.endpoint_key
-                  ORDER BY COALESCE(d.finished_at, d.started_at, r.finished_at, r.started_at) DESC, r.run_id DESC
-                ) AS row_num
-              FROM pipeline_endpoints pe
-              JOIN raw.pnp_runs r
-                ON r.instance_key = pe.instance_key
-              LEFT JOIN LATERAL (
-                SELECT
-                  microdados_url,
-                  status,
-                  error_message,
-                  row_count_raw,
-                  started_at,
-                  finished_at
-                FROM raw.pnp_downloads d
-                WHERE d.run_id = r.run_id
-                  AND d.tipo_microdados = pe.tipo_microdados
-                ORDER BY COALESCE(d.finished_at, d.started_at) DESC, d.download_id DESC
-                LIMIT 1
-              ) d ON TRUE
-              WHERE d.microdados_url IS NOT NULL
-                 OR EXISTS (
-                   SELECT 1
-                   FROM raw.pnp_catalog_entries c
-                   WHERE c.run_id = r.run_id
-                     AND c.tipo_microdados = pe.tipo_microdados
-                 )
-            )
-            SELECT
-              pe.endpoint_key,
-              pe.endpoint_name,
-              pe.tipo_microdados,
-              er.run_id AS diagnostic_run_id,
-              er.source_url,
-              er.updated_at,
-              er.run_status,
-              er.download_status,
-              er.download_error,
-              er.row_count_raw,
-              er.raw_record_count,
-              er.staging_record_count,
-              er.curated_record_count,
-              er.catalog_entry_count
-            FROM pipeline_endpoints pe
-            LEFT JOIN endpoint_runs er
-              ON er.endpoint_key = pe.endpoint_key
-             AND er.row_num = 1
-            ORDER BY pe.endpoint_key
-            """,
-            (instance_key,),
-        )
-        rows = [dict(row) for row in cur.fetchall()]
-
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        diagnostic = {
-            "endpoint_key": row.get("endpoint_key"),
-            "endpoint_name": row.get("endpoint_name"),
-            "tipo_microdados": row.get("tipo_microdados"),
-            "ingestion_mode": "powerbi_microdados",
-            "source_label": PNP_POWERBI_SOURCE_LABEL,
-            "source_group": PNP_POWERBI_GROUP_LABEL,
-            "source_path": "powerbi_microdados",
-            "run_id": row.get("diagnostic_run_id"),
-            "source_url": row.get("source_url"),
-            "updated_at": row.get("updated_at"),
-            "status": row.get("download_status") or ("cataloged" if _coerce_int(row.get("catalog_entry_count")) else "missing"),
-            "row_count": row.get("row_count_raw") or row.get("raw_record_count"),
-            "selected_years": [],
-            "selected_microdados_types": [row.get("tipo_microdados")] if row.get("tipo_microdados") else [],
-            "downloads": [],
-            "raw_run_id": row.get("diagnostic_run_id"),
-            "raw_record_count": row.get("raw_record_count"),
-            "staging_record_count": row.get("staging_record_count"),
-            "curated_record_count": row.get("curated_record_count"),
-            "raw_updated_at": row.get("updated_at"),
-            "error": row.get("download_error") if row.get("run_status") != "success" else None,
-        }
-        diagnostic.update(_describe_pnp_diagnostic(diagnostic))
-        items.append(diagnostic)
-
-    return items
-
 
 def _build_pnp_runtime_event_message(task_id: str, status: str, details: dict[str, Any], error_message: str | None) -> str:
     if error_message:
@@ -1676,65 +1447,6 @@ def _build_pnp_ingestion_summary(run_events: list[dict[str, Any]]) -> dict[str, 
         "latest_success_stage": latest_success.get("stage") if latest_success else None,
         "stages": latest_by_stage,
     }
-
-
-def _load_pnp_instance_integrations(instance_key: str, limit: int = 10) -> list[dict[str, Any]]:
-    with _db_connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            WITH endpoint_counts AS (
-              SELECT
-                instance_key,
-                COUNT(*) AS endpoint_count
-              FROM raw.pnp_pipeline_endpoints
-              WHERE instance_key = %s
-                AND is_active = TRUE
-              GROUP BY instance_key
-            ),
-            download_counts AS (
-              SELECT
-                run_id,
-                COUNT(*) AS asset_count
-              FROM raw.pnp_downloads
-              GROUP BY run_id
-            ),
-            package_counts AS (
-              SELECT
-                run_id,
-                COUNT(*) AS package_count
-              FROM raw.pnp_run_packages
-              GROUP BY run_id
-            )
-            SELECT
-              runs.run_id,
-              CASE
-                WHEN COALESCE(runs.run_summary_json->>'operation', 'sync') = 'validate' THEN 'source_validation'
-                ELSE 'pipeline_sync'
-              END AS integration_type,
-              runs.started_at,
-              runs.finished_at,
-              COALESCE(download_counts.asset_count, 0) AS asset_count,
-              COALESCE(endpoint_counts.endpoint_count, 0) AS endpoint_count,
-              runs.raw_record_count AS record_count,
-              COALESCE(staging.deduplicated_record_count, 0) AS staging_record_count,
-              COALESCE(package_counts.package_count, 0) AS package_count,
-              runs.status
-            FROM raw.pnp_runs runs
-            LEFT JOIN endpoint_counts
-              ON endpoint_counts.instance_key = runs.instance_key
-            LEFT JOIN download_counts
-              ON download_counts.run_id = runs.run_id
-            LEFT JOIN package_counts
-              ON package_counts.run_id = runs.run_id
-            LEFT JOIN staging.pnp_ingestion_runs staging
-              ON staging.run_id = runs.run_id
-            WHERE runs.instance_key = %s
-            ORDER BY COALESCE(runs.finished_at, runs.started_at) DESC NULLS LAST
-            LIMIT %s
-            """,
-            (instance_key, instance_key, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
 
 
 def _persist_pnp_instance_settings(
@@ -2211,31 +1923,47 @@ def get_pnp_pipeline(instance_key: str, _: dict[str, object] = Depends(_require_
     return _load_pnp_instance(instance_key)
 
 
-@app.get("/api/admin/connectors/pnp/instances/{instance_key}/admin-overview")
-def get_pnp_instance_admin_overview(
+@app.get("/api/admin/connectors/pnp/instances/{instance_key}/diagnostics")
+def get_pnp_instance_diagnostics(
     instance_key: str,
     _: dict[str, object] = Depends(_require_admin),
 ) -> dict[str, object]:
     instance = _load_pnp_instance(instance_key)
-    diagnostics = _load_pnp_instance_diagnostics(instance_key)
-    run_events = _load_pnp_instance_run_events(instance_key)
-    integrations = _load_pnp_instance_integrations(instance_key)
+    diagnostics = pnp_instance_repository.load_instance_diagnostics(_db_connect, instance_key)
     return {
         "instance": instance,
         "diagnostics": diagnostics,
-        "diagnostics_summary": _summarize_pnp_diagnostics(diagnostics),
-        "run_events": run_events,
-        "ingestion": _build_pnp_ingestion_summary(run_events),
-        "integrations": integrations,
     }
 
 
-@app.get("/api/admin/pipelines/pnp/{instance_key}/admin-overview")
-def get_pnp_pipeline_admin_overview(
+@app.get("/api/admin/pipelines/pnp/{instance_key}/diagnostics")
+def get_pnp_pipeline_diagnostics(
     instance_key: str,
     _: dict[str, object] = Depends(_require_admin),
 ) -> dict[str, object]:
-    return get_pnp_instance_admin_overview(instance_key, _)
+    return get_pnp_instance_diagnostics(instance_key, _)
+
+
+@app.get("/api/admin/connectors/pnp/instances/{instance_key}/timeline")
+def get_pnp_instance_timeline(
+    instance_key: str,
+    _: dict[str, object] = Depends(_require_admin),
+) -> dict[str, object]:
+    instance = _load_pnp_instance(instance_key)
+    run_events = _load_pnp_instance_run_events(instance_key)
+    return {
+        "instance": instance,
+        "run_events": run_events,
+        "ingestion": _build_pnp_ingestion_summary(run_events),
+    }
+
+
+@app.get("/api/admin/pipelines/pnp/{instance_key}/timeline")
+def get_pnp_pipeline_timeline(
+    instance_key: str,
+    _: dict[str, object] = Depends(_require_admin),
+) -> dict[str, object]:
+    return get_pnp_instance_timeline(instance_key, _)
 
 
 @app.get("/api/admin/connectors/pnp/instances/{instance_key}/dag-runs")

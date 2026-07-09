@@ -635,6 +635,18 @@ CREATE TABLE IF NOT EXISTS staging.pnp_matriculas (
 
 CREATE INDEX IF NOT EXISTS idx_staging_pnp_matriculas_ano_inst
   ON staging.pnp_matriculas (ano, instituicao, uf, municipio);
+CREATE INDEX IF NOT EXISTS idx_staging_pnp_matriculas_run
+  ON staging.pnp_matriculas (run_id);
+-- Indice largo cobrindo, na mesma ordem, as colunas do GROUP BY de
+-- curated.vw_pnp_matriculas_perfil (ver 030_vw_pnp_matriculas.sql). Permite ao planner
+-- resolver "SELECT COUNT(*) FROM curated.vw_pnp_matriculas_perfil WHERE run_id = X" via
+-- Index Only Scan + GroupAggregate, sem precisar materializar um Sort sobre milhoes de
+-- linhas (endpoint admin-overview, services/api/app/main.py:_load_pnp_instance_diagnostics).
+CREATE INDEX IF NOT EXISTS idx_staging_pnp_matriculas_run_group
+  ON staging.pnp_matriculas (
+    run_id, instance_key, ano, instituicao, regiao, uf, municipio,
+    sexo, cor_raca, renda_familiar, faixa_etaria, situacao_matricula
+  );
 
 CREATE TABLE IF NOT EXISTS staging.pnp_eficiencia_academica (
   raw_record_id BIGINT PRIMARY KEY REFERENCES raw.pnp_eficiencia_academica_src(raw_record_id) ON DELETE CASCADE,
@@ -657,6 +669,17 @@ CREATE TABLE IF NOT EXISTS staging.pnp_eficiencia_academica (
 
 CREATE INDEX IF NOT EXISTS idx_staging_pnp_eficiencia_ano_inst
   ON staging.pnp_eficiencia_academica (ano, instituicao, uf, municipio);
+CREATE INDEX IF NOT EXISTS idx_staging_pnp_eficiencia_academica_run
+  ON staging.pnp_eficiencia_academica (run_id);
+-- Indice largo cobrindo, na mesma ordem, as colunas do GROUP BY de
+-- curated.vw_pnp_eficiencia_situacao (ver 040_vw_pnp_eficiencia.sql) -- mesmo motivo do
+-- indice equivalente em staging.pnp_matriculas acima.
+CREATE INDEX IF NOT EXISTS idx_staging_pnp_eficiencia_academica_run_group
+  ON staging.pnp_eficiencia_academica (
+    run_id, instance_key, ano, instituicao, regiao, uf, municipio,
+    sexo, cor_raca, renda_familiar, faixa_etaria, categoria_situacao,
+    situacao_matricula, matricula_atendida
+  );
 
 CREATE TABLE IF NOT EXISTS staging.pnp_servidores (
   raw_record_id BIGINT PRIMARY KEY REFERENCES raw.pnp_servidores_src(raw_record_id) ON DELETE CASCADE,
@@ -680,6 +703,8 @@ CREATE TABLE IF NOT EXISTS staging.pnp_servidores (
 
 CREATE INDEX IF NOT EXISTS idx_staging_pnp_servidores_ano_inst
   ON staging.pnp_servidores (ano, instituicao, regiao);
+CREATE INDEX IF NOT EXISTS idx_staging_pnp_servidores_run
+  ON staging.pnp_servidores (run_id);
 
 CREATE TABLE IF NOT EXISTS staging.pnp_financeiro (
   raw_record_id BIGINT PRIMARY KEY REFERENCES raw.pnp_financeiro_src(raw_record_id) ON DELETE CASCADE,
@@ -697,3 +722,5 @@ CREATE TABLE IF NOT EXISTS staging.pnp_financeiro (
 
 CREATE INDEX IF NOT EXISTS idx_staging_pnp_financeiro_ano_uo
   ON staging.pnp_financeiro (ano, nome_uo, cod_acao, grupo_despesa);
+CREATE INDEX IF NOT EXISTS idx_staging_pnp_financeiro_run
+  ON staging.pnp_financeiro (run_id);

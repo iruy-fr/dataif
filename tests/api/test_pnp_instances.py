@@ -434,7 +434,7 @@ def test_list_pnp_instances_groups_internal_endpoints(monkeypatch) -> None:
     assert instance["source_count"] == 2
 
 
-def test_get_pnp_instance_admin_overview(monkeypatch) -> None:
+def test_get_pnp_instance_diagnostics(monkeypatch) -> None:
     monkeypatch.setattr(
         main,
         "_load_pnp_instance",
@@ -446,12 +446,40 @@ def test_get_pnp_instance_admin_overview(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(
-        main,
-        "_load_pnp_instance_diagnostics",
-        lambda instance_key: [
+        main.pnp_instance_repository,
+        "load_instance_diagnostics",
+        lambda connect_factory, instance_key: [
             {"endpoint_key": "pnp_ifb__powerbi_microdados", "status": "ok", "operational_status": "raw_loaded"},
             {"endpoint_key": "pnp_ifb__powerbi_microdados_secundario", "status": "error", "operational_status": "error"},
         ],
+    )
+    main.app.dependency_overrides[main._require_admin] = lambda: {"realm_access": {"roles": ["admin"]}}
+
+    try:
+        client = TestClient(main.app)
+        response = client.get("/api/admin/connectors/pnp/instances/pnp_ifb/diagnostics")
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["instance"]["instance_key"] == "pnp_ifb"
+    assert len(body["diagnostics"]) == 2
+    assert "diagnostics_summary" not in body
+    assert "integrations" not in body
+    assert "run_events" not in body
+
+
+def test_get_pnp_instance_timeline(monkeypatch) -> None:
+    monkeypatch.setattr(
+        main,
+        "_load_pnp_instance",
+        lambda instance_key: {
+            "instance_key": instance_key,
+            "instance_name": "PNP IFB",
+            "source_count": 2,
+            "ingestion_mode": "powerbi_microdados",
+        },
     )
     monkeypatch.setattr(
         main,
@@ -467,31 +495,20 @@ def test_get_pnp_instance_admin_overview(monkeypatch) -> None:
             },
         ],
     )
-    monkeypatch.setattr(
-        main,
-        "_load_pnp_instance_integrations",
-        lambda instance_key: [
-            {"run_id": "run-1", "integration_type": "source_validation"},
-            {"run_id": "run-2", "integration_type": "extract_raw"},
-        ],
-    )
     main.app.dependency_overrides[main._require_admin] = lambda: {"realm_access": {"roles": ["admin"]}}
 
     try:
         client = TestClient(main.app)
-        response = client.get("/api/admin/connectors/pnp/instances/pnp_ifb/admin-overview")
+        response = client.get("/api/admin/connectors/pnp/instances/pnp_ifb/timeline")
     finally:
         main.app.dependency_overrides.clear()
 
     assert response.status_code == 200
     body = response.json()
     assert body["instance"]["instance_key"] == "pnp_ifb"
-    assert len(body["diagnostics"]) == 2
-    assert body["diagnostics_summary"]["raw_loaded"] == 1
-    assert body["diagnostics_summary"]["attention"] == 1
     assert body["ingestion"]["status"] == "raw_loaded"
     assert len(body["run_events"]) == 1
-    assert len(body["integrations"]) == 2
+    assert "diagnostics" not in body
     assert "auth_history" not in body
 
 
