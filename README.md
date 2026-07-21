@@ -212,9 +212,7 @@ Configure senhas e `METABASE_EMBED_SECRET` antes do primeiro `up`, pois o Postgr
 
 O frontend inclui um playground de SQL que roda inteiramente no navegador (PGLite), sem depender do backend — útil para explorar o modelo de dados ou testar consultas rapidamente:
 
-![Playground de SQL no navegador](img.png)
-
-![Consulta online com tabelas locais](img_1.png)
+![Playground de SQL no navegador](consulta.png)
 
 ## Vanna AI local
 
